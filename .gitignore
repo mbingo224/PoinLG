@@ -146,3 +146,8 @@ data/PCN/val
 upload*
 KITTI_VIS/
 models/pointrvrc/mm3d_pn2
+
+# 虚拟环境目录
+virtual_env/
+# Pycharm的开发配置目录
+.idea/
