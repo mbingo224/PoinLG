@@ -65,6 +65,7 @@ def get_args():
             'ckpts shouldnt be None while test mode')
 
     # 在操作系统中定义的环境变量，全部保存在os.environ这个变量中(字典的形式)，如果LOCAL_RANK并不在环境变量中，向其中添加LOCAL_RANK变量
+    # os.environ获得每个进程的节点ip信息，全局rank以及local rank，有了这些就可以很方便很方便的完成DDP分布式训练的初始化
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
 

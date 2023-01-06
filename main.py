@@ -9,24 +9,30 @@ import torch
 from tensorboardX import SummaryWriter
 
 def main():
-    # args
+    # args 获取命令行的参数并解析，实质上大部分参数都是读取./cfgs/目录下的配置文件，不同的数据集对应不同的配置文件，例如对于PCN：./cfgs/PCN_models/PoinTr.yaml
     args = parser.get_args()
     # CUDA
     args.use_gpu = torch.cuda.is_available()
     if args.use_gpu:
+        # 设置 torch.backends.cudnn.benchmark=True 将会让程序在开始时花费一点额外时间，为整个网络的每个卷积层搜索最适合它的卷积实现算法，进而实现网络的加速。
         torch.backends.cudnn.benchmark = True
     # init distributed env first, since logger depends on the dist info.
-    if args.launcher == 'none':
+    
+    if args.launcher == 'none': # 单机多卡分布式训练DP
         args.distributed = False
-    else:
+    else: # 当args.launcher == 'pytorch' 采用多机多卡分布式训练DDP，使用前需要完成多进程的初始化，一般采用这种方式，训练速度会快一些
         args.distributed = True
+        # DDP分布式训练环境初始化
+        # world_size, rank, local_rank, rank。world size指进程总数，在这里就是我们使用的卡数；
+        # rank指进程序号，local_rank指本地序号，两者的区别在于前者用于进程间通讯，后者用于本地设备分配
         dist_utils.init_dist(args.launcher)
         # re-set gpu_ids with distributed training mode
         _, world_size = dist_utils.get_dist_info()
         args.world_size = world_size
     # logger
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
-    log_file = os.path.join(args.experiment_path, f'{timestamp}.log')
+    # 对于PCN作为训练集，args.experiment_path = "./experiments/PoinTr/PCN_models/example"
+    log_file = os.path.join(args.experiment_path, f'{timestamp}.log') # 日志目录
     logger = get_root_logger(log_file=log_file, name=args.log_name)
     # define the tensorboard writer
     if not args.test:

@@ -45,6 +45,8 @@ def get_logger(name, log_file=None, log_level=logging.INFO, file_mode='w'):
     Returns:
         logging.Logger: The expected logger.
     """
+    # 创建Logger日志输出的对象，getLogger返回具有指定 name 的日志记录器
+    # 所有用给定的 name 对该函数的调用都将返回相同的日志记录器实例(重复调用这个函数将会获得相同的logger)。 这意味着日志记录器实例不需要在应用的各部分间传递。
     logger = logging.getLogger(name)
     if name in logger_initialized:
         return logger

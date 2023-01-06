@@ -17,6 +17,7 @@ def init_dist(launcher, backend='nccl', **kwargs):
 
 def _init_dist_pytorch(backend, **kwargs):
     # TODO: use local_rank instead of rank % num_gpus
+    # rank 是指多个服务器的 rank，local rank 是指某个机器下面的卡的 rank
     rank = int(os.environ['RANK'])
     num_gpus = torch.cuda.device_count()
     torch.cuda.set_device(rank % num_gpus)
