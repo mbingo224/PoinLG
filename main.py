@@ -33,11 +33,11 @@ def main():
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     # 对于PCN作为训练集，args.experiment_path = "./experiments/PoinTr/PCN_models/example"
     log_file = os.path.join(args.experiment_path, f'{timestamp}.log') # 日志目录
-    logger = get_root_logger(log_file=log_file, name=args.log_name) # 对于PCN数据集的配置文件的log_name一般是PoinTr
+    logger = get_root_logger(log_file=log_file, name=args.log_name) # 配置根日志器及其子日志器的处理器、格式器，对于PCN数据集对应的配置文件中args.log_name一般是PoinTr
     # define the tensorboard writer
     if not args.test:
         if args.local_rank == 0:
-            train_writer = SummaryWriter(os.path.join(args.tfboard_path, 'train'))
+            train_writer = SummaryWriter(os.path.join(args.tfboard_path, 'train')) # 指定训练时模型的输出事件的写入路径
             val_writer = SummaryWriter(os.path.join(args.tfboard_path, 'test'))
         else:
             train_writer = None

@@ -128,14 +128,15 @@ def print_log(msg, logger=None, level=logging.INFO):
         level (int): Logging level. Only available when `logger` is a Logger
             object or "root".
     """
+    # 根据日志器的类型去进行对应地输出
     if logger is None:
-        print(msg)
+        print(msg) # 直接控制台打印
     elif isinstance(logger, logging.Logger):
-        logger.log(level, msg)
+        logger.log(level, msg) # 模块级别的函数，在日志记录器root logger上记录一条 level=logging.INFO 级别的消息
     elif logger == 'silent':
         pass
-    elif isinstance(logger, str):
-        _logger = get_logger(logger)
+    elif isinstance(logger, str): # logger是一个str对象，先初始化获得一个日志器logger，再在日志器记录一条 level=logging.INFO 级别的消息
+        _logger = get_logger(logger) 
         _logger.log(level, msg)
     else:
         raise TypeError(
