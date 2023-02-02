@@ -135,7 +135,7 @@ def print_log(msg, logger=None, level=logging.INFO):
         logger.log(level, msg) # 模块级别的函数，在日志记录器root logger上记录一条 level=logging.INFO 级别的消息
     elif logger == 'silent':
         pass
-    elif isinstance(logger, str): # logger是一个str对象，先初始化获得一个日志器logger，再在日志器记录一条 level=logging.INFO 级别的消息
+    elif isinstance(logger, str): # logger是一个str对象，先初始化获得一个日志器logger，再在日志器记录一条整数 level=logging.INFO 所代表级别的消息
         _logger = get_logger(logger) 
         _logger.log(level, msg)
     else:

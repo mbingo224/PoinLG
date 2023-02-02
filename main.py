@@ -16,8 +16,8 @@ def main():
     if args.use_gpu:
         # 设置 torch.backends.cudnn.benchmark=True 将会让程序在开始时花费一点额外时间，为整个网络的每个卷积层搜索最适合它的卷积实现算法，进而实现网络的加速。
         torch.backends.cudnn.benchmark = True
-    # init distributed env first, since logger depends on the dist info.
     
+    # init distributed env first, since logger depends on the dist info.  
     if args.launcher == 'none': # 单机多卡分布式训练DP
         args.distributed = False
     else: # 当args.launcher == 'pytorch' 采用多机多卡分布式训练DDP，使用前需要完成多进程的初始化，一般采用这种方式，训练速度会快一些
@@ -29,32 +29,35 @@ def main():
         # re-set gpu_ids with distributed training mode
         _, world_size = dist_utils.get_dist_info()
         args.world_size = world_size
-    # logger
+    # logger，根据当地时间戳来命名日志文件
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     # 对于PCN作为训练集，args.experiment_path = "./experiments/PoinTr/PCN_models/example"
     log_file = os.path.join(args.experiment_path, f'{timestamp}.log') # 日志目录
     logger = get_root_logger(log_file=log_file, name=args.log_name) # 配置根日志器及其子日志器的处理器、格式器，对于PCN数据集对应的配置文件中args.log_name一般是PoinTr
     # define the tensorboard writer
-    if not args.test:
+    if not args.test: # 非测试test模式下
         if args.local_rank == 0:
-            train_writer = SummaryWriter(os.path.join(args.tfboard_path, 'train')) # 指定训练时模型的输出事件的写入路径
+            train_writer = SummaryWriter(os.path.join(args.tfboard_path, 'train')) # 指定训练时模型的输出事件events的写入路径
             val_writer = SummaryWriter(os.path.join(args.tfboard_path, 'test'))
         else:
             train_writer = None
             val_writer = None
-    # config
+    
+    # config # 从命令行运行训练或测试网络中读取配置文件yaml以获得各种配置参数
     config = get_config(args, logger = logger)
     # batch size
-    if args.distributed:
+    if args.distributed: # 分布式训练是true
         assert config.total_bs % world_size == 0
-        config.dataset.train.others.bs = config.total_bs // world_size
+        config.dataset.train.others.bs = config.total_bs // world_size # config.total_bs可能是world_size的倍数，因为在DDP训练时world_size指的是显卡的数量，因此分配给每张卡的batch size需要一致
     else:
         config.dataset.train.others.bs = config.total_bs
-    # log 
+    
+    # log 分别将参数和配置写入到文件的日志信息打印出来，意即是xx.log日志文件中的开始的一系列args和config信息
     log_args_to_file(args, 'args', logger = logger)
     log_config_to_file(config, 'config', logger = logger)
     # exit()
     logger.info(f'Distributed training: {args.distributed}')
+    
     # set random seeds
     if args.seed is not None:
         logger.info(f'Set random seed to {args.seed}, '

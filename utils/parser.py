@@ -9,7 +9,7 @@ def get_args():
         '--config', 
         type = str, 
         help = 'yaml config file')
-    # choices=['none', 'pytorch']表示参数可以接受的值的范围
+    # choices=['none', 'pytorch']表示参数可以接受的值的范围，pytorch表示DDP的训练方式
     parser.add_argument(
         '--launcher',
         choices=['none', 'pytorch'],
@@ -22,7 +22,7 @@ def get_args():
     parser.add_argument(
         '--deterministic',
         action='store_true',
-        help='whether to set deterministic options for CUDNN backend.') # action='store_true'当这一选项存在时，为 args.deterministic 赋值为 True没有指定时则隐含地赋值为 False。      
+        help='whether to set deterministic options for CUDNN backend.') # action='store_true'当这一选项存在时，为 args.deterministic 赋值为 True，没有指定时则隐含地赋值为 False。      
     # bn
     parser.add_argument(
         '--sync_bn', 
@@ -64,7 +64,7 @@ def get_args():
         raise ValueError(
             'ckpts shouldnt be None while test mode')
 
-    # 在操作系统中定义的环境变量，全部保存在os.environ这个变量中(字典的形式)，如果LOCAL_RANK并不在环境变量中，向其中添加LOCAL_RANK变量
+    # 在操作系统中定义的环境变量，全部保存在os.environ这个变量中(字典的形式)，如果LOCAL_RANK并不在环境变量中，向其中添加LOCAL_RANK（进程在本地服务器节点上的序号表示）变量
     # os.environ获得每个进程的节点ip信息，全局rank以及local rank，有了这些就可以很方便很方便的完成DDP分布式训练的初始化
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -73,6 +73,8 @@ def get_args():
         args.exp_name = 'test_' + args.exp_name
     if args.mode is not None:
         args.exp_name = args.exp_name + '_' +args.mode
+
+    # 额外的给参数解析对象添加三个属性参数experiment_path、tfboard_path和log_name
     # Path(args.config).stem将会返回当前路径中的主文件名，这里的当前路径即指args.config参数所表示的路径，例如对于args.config = "./cfgs/PCN_models/PoinTr.yaml"，
     # Path(args.config).stem将会取得 PoinTr，Path(args.config).parent.stem将会取得PCN_models，因此再拼接上args.exp_name = "example" 可得到 args.experiment_path = "./experiments/PoinTr/PCN_models/example"
     args.experiment_path = os.path.join('./experiments', Path(args.config).stem, Path(args.config).parent.stem, args.exp_name)
@@ -81,7 +83,7 @@ def get_args():
     create_experiment_dir(args)
     return args
 
-def create_experiment_dir(args):
+def create_experiment_dir(args): # 创建模型实验experiment和tfboard目录
     if not os.path.exists(args.experiment_path):
         os.makedirs(args.experiment_path)
         print('Create experiment path successfully at %s' % args.experiment_path)
