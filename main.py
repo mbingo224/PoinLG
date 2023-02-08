@@ -45,7 +45,7 @@ def main():
     
     # config # 从命令行运行训练或测试网络中读取配置文件yaml以获得各种配置参数
     config = get_config(args, logger = logger)
-    # batch size
+    # batch size，为config对象额外再添加训练train时的batch size，但是需要分成DDP和DP两种情况
     if args.distributed: # 分布式训练是true
         assert config.total_bs % world_size == 0
         config.dataset.train.others.bs = config.total_bs // world_size # config.total_bs可能是world_size的倍数，因为在DDP训练时world_size指的是显卡的数量，因此分配给每张卡的batch size需要一致
@@ -53,6 +53,7 @@ def main():
         config.dataset.train.others.bs = config.total_bs
     
     # log 分别将参数和配置写入到文件的日志信息打印出来，意即是xx.log日志文件中的开始的一系列args和config信息
+    # 因此即使是test模式下，config.dataset.train和config.dataset.val的日志也会被输出到日志文件中
     log_args_to_file(args, 'args', logger = logger)
     log_config_to_file(config, 'config', logger = logger)
     # exit()
@@ -62,9 +63,11 @@ def main():
     if args.seed is not None:
         logger.info(f'Set random seed to {args.seed}, '
                     f'deterministic: {args.deterministic}')
+        # seed用于指定随机数生成时所用算法开始的整数值，这里还加上了local_rank作为初始seed，使用相同的seed值，则每次生成的随即数都相同，固定随机源即可保证模型的训练结果始终一致
+        # deterministic设置所有算法需要保证其有确定性的实现，这样可保证每次网络的训练结果都相同
         misc.set_random_seed(args.seed + args.local_rank, deterministic=args.deterministic) # seed + rank, for augmentation
     if args.distributed:
-        assert args.local_rank == torch.distributed.get_rank() 
+        assert args.local_rank == torch.distributed.get_rank() # 断言当前进程所获得的全局rank与local_rank是否一致，如果不一致就抛出错误
 
     # run
     if args.test:

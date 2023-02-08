@@ -46,12 +46,12 @@ class Metrics(object):
 
     @classmethod
     def items(cls):
-        return [i for i in cls.ITEMS if i['enabled']]
+        return [i for i in cls.ITEMS if i['enabled']] # 需要保证ITEMS列表中的字典对象元素的enabled标志位为true
 
     @classmethod
     def names(cls):
-        _items = cls.items()
-        return [i['name'] for i in _items]
+        _items = cls.items() # 这里items()方法是上述classmethod，因此_items = ITEMS
+        return [i['name'] for i in _items] # 将评估指标中F-Score、CDL1、CDL2列举出来
 
     @classmethod
     def _get_f_score(cls, pred, gt, th=0.01):

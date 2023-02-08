@@ -15,7 +15,7 @@ def run_net(args, config, train_writer=None, val_writer=None):
     # build dataset
     (train_sampler, train_dataloader), (_, test_dataloader) = builder.dataset_builder(args, config.dataset.train), \
                                                             builder.dataset_builder(args, config.dataset.val)
-    # build model
+    # build model，由于class PoinTr，即模型PoinTr已经添加到注册器中，因此此步骤将会实例化出PoinTr的模型 相当于 net = PoinTr()
     base_model = builder.model_builder(config.model)
     if args.use_gpu:
         base_model.to(args.local_rank)
@@ -285,19 +285,23 @@ crop_ratio = {
 def test_net(args, config):
     logger = get_logger(args.log_name)
     print_log('Tester start ... ', logger = logger)
+    # test模式 bs = 1，test_dataloader是一个tuple
     _, test_dataloader = builder.dataset_builder(args, config.dataset.test)
  
+    # 这里和上面dataset的构建是相同的，通过config配置文件获取model的name来查询注册器中的model_dict所添加的model的name，
+    # 如有就实例化一个model对象来获取一个model
     base_model = builder.model_builder(config.model)
-    # load checkpoints
+    # load checkpoints，将预训练模型中存储的参数权重state_dict加载到自己构建的base_model
     builder.load_model(base_model, args.ckpts, logger = logger)
     if args.use_gpu:
+        # 将base_model移动到当前进程（当前使用的显卡GPU）
         base_model.to(args.local_rank)
 
     #  DDP    
     if args.distributed:
         raise NotImplementedError()
 
-    # Criterion
+    # Criterion，损失函数选取
     ChamferDisL1 = ChamferDistanceL1()
     ChamferDisL2 = ChamferDistanceL2()
 
@@ -305,20 +309,21 @@ def test_net(args, config):
 
 def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, logger = None):
 
-    base_model.eval()  # set model to eval mode
-
+    base_model.eval()  # set model to eval mode，model.eval() 将 dropout 和 batch normalization 层设置为评估模式以使得推理一致
+    # 分别构建稀疏、稠密点云的L1、L2 test loss
     test_losses = AverageMeter(['SparseLossL1', 'SparseLossL2', 'DenseLossL1', 'DenseLossL2'])
-    test_metrics = AverageMeter(Metrics.names())
+    test_metrics = AverageMeter(Metrics.names()) # 获得metrics评估列表中三个指标名F-Score、CDL1、CDL2
     category_metrics = dict()
     n_samples = len(test_dataloader) # bs is 1
 
-    with torch.no_grad():
+    with torch.no_grad(): # 测试不需要使用梯度，即不会自动构建计算图
+        # 将加载的dataset从idx = 0 开始索引出来taxonomy_ids, model_ids, data
         for idx, (taxonomy_ids, model_ids, data) in enumerate(test_dataloader):
             taxonomy_id = taxonomy_ids[0] if isinstance(taxonomy_ids[0], str) else taxonomy_ids[0].item()
             model_id = model_ids[0]
 
-            npoints = config.dataset.test._base_.N_POINTS
-            dataset_name = config.dataset.test._base_.NAME
+            npoints = config.dataset.test._base_.N_POINTS # e.g. 16384
+            dataset_name = config.dataset.test._base_.NAME # e.g. KITTI
             if dataset_name == 'PCN':
                 partial = data[0].cuda()
                 gt = data[1].cuda()
@@ -369,12 +374,15 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
                         category_metrics[taxonomy_id] = AverageMeter(Metrics.names())
                     category_metrics[taxonomy_id].update(_metrics)
             elif dataset_name == 'KITTI':
+                # 将数据集中的数据移动到GPU上
                 partial = data.cuda()
                 ret = base_model(partial)
                 dense_points = ret[1]
                 target_path = os.path.join(args.experiment_path, 'vis_result')
+                # 在args.experiment_path目录下构建test样本所生成的可视化评估目录vis_result
                 if not os.path.exists(target_path):
                     os.mkdir(target_path)
+                # 将评估结果的可视化目录拼接出来并生成，并生成包含input.npy、pred.npy的frame_0_car_0_000和对应的frame_0_car_0_000.png图片
                 misc.visualize_KITTI(
                     os.path.join(target_path, f'{model_id}_{idx:03d}'),
                     [partial[0].cpu(), dense_points[0].cpu()]
@@ -382,7 +390,7 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
                 continue
             else:
                 raise NotImplementedError(f'Train phase do not support {dataset_name}')
-
+            # 每200个样本去打印一下sample的损失loss、metrics
             if (idx+1) % 200 == 0:
                 print_log('Test[%d/%d] Taxonomy = %s Sample = %s Losses = %s Metrics = %s' %
                             (idx + 1, n_samples, taxonomy_id, model_id, ['%.4f' % l for l in test_losses.val()], 

@@ -190,6 +190,7 @@ class Registry:
         self._register_module(cls, force=force)
         return cls
 
+    # 用于注册模块的注册器register
     def register_module(self, name=None, force=False, module=None):
         """Register a module.
         A record will be added to `self._module_dict`, whose key is the class

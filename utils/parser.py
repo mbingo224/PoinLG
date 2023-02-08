@@ -22,7 +22,7 @@ def get_args():
     parser.add_argument(
         '--deterministic',
         action='store_true',
-        help='whether to set deterministic options for CUDNN backend.') # action='store_true'当这一选项存在时，为 args.deterministic 赋值为 True，没有指定时则隐含地赋值为 False。      
+        help='whether to set deterministic options for CUDNN backend.') # action='store_true'当这一选项存在时，为 args.deterministic 赋值为 True，没有指定时则默认赋值为 False。      
     # bn
     parser.add_argument(
         '--sync_bn', 

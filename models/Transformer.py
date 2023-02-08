@@ -239,6 +239,8 @@ class PCTransformer(nn.Module):
 
         print_log(' Transformer with knn_layer %d' % self.knn_layer, logger='MODEL')
 
+        # 使用DGCNN进行特征提取，DGCNN结合了全局和局部特征，考虑每个点本身（全局特征）以及周围点与其的相对距离（近邻点）
+        # 可参考：https://zhuanlan.zhihu.com/p/425724743 中解释
         self.grouper = DGCNN_Grouper()  # B 3 N to B C(3) N(128) and B C(128) N(128)
 
         self.pos_embed = nn.Sequential(
