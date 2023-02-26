@@ -9,17 +9,19 @@ import numpy as np
 from knn_cuda import KNN
 knn = KNN(k=8, transpose_mode=False)
 
+# 这里是为每一个选取的中心点(N)选取其周围的K个近邻点
 def get_knn_index(coor_q, coor_k=None):
     coor_k = coor_k if coor_k is not None else coor_q
     # coor: bs, 3, np
     batch_size, _, num_points = coor_q.size()
-    num_points_k = coor_k.size(2)
+    num_points_k = coor_k.size(2) # 将np赋给num_points_k
 
     with torch.no_grad():
-        _, idx = knn(coor_k, coor_q)  # bs k np
-        idx_base = torch.arange(0, batch_size, device=coor_q.device).view(-1, 1, 1) * num_points_k
+        # 这里下划线变量返回的是每个中心点的近邻点的距离，由于 k = 8，因此其shape：bs x 8 x np(128)
+        _, idx = knn(coor_k, coor_q)  # bs k np 这里是由于KNN继承的nn.Module定义了__call__方法了，由于forward 是 __call__的重名，因此调用knn(coor_k, coor_q)实际上是调用__call__方法，即等同于调用 forward 方法
+        idx_base = torch.arange(0, batch_size, device=coor_q.device).view(-1, 1, 1) * num_points_k # view(-1, 1, 1) 表示将tensor重构为dim0 x 1 x 1，第0维由于是-1，将会自动补齐
         idx = idx + idx_base
-        idx = idx.view(-1)
+        idx = idx.view(-1) # 这里是将idx从三维降为1维，相当于展平flaten
     
     return idx  # bs*k*np
 
@@ -233,9 +235,9 @@ class PCTransformer(nn.Module):
                         num_query = 224, knn_layer = -1):
         super().__init__()
 
-        self.num_features = self.embed_dim = embed_dim
+        self.num_features = self.embed_dim = embed_dim # 特征数的初始化
         
-        self.knn_layer = knn_layer
+        self.knn_layer = knn_layer # KNN层数的设置
 
         print_log(' Transformer with knn_layer %d' % self.knn_layer, logger='MODEL')
 
@@ -243,6 +245,10 @@ class PCTransformer(nn.Module):
         # 可参考：https://zhuanlan.zhihu.com/p/425724743 中解释
         self.grouper = DGCNN_Grouper()  # B 3 N to B C(3) N(128) and B C(128) N(128)
 
+        # 这里是获取position_embeding来恢复点云输入序列中的时序信息，这里采用的是一维卷积，因为Transformer就是专门用来处理文本这种一维数据
+        # 批归一化的参数选择一般上一输入层形状的N x C 中的 C，输出形状和输入形状是一致的
+        # nn.LeakyReLU()函数是ReLU的弱化版，negative_slope控制负斜率的大小，默认值：1e-2
+        # 对于
         self.pos_embed = nn.Sequential(
             nn.Conv1d(in_chans, 128, 1),
             nn.BatchNorm1d(128),
@@ -256,6 +262,7 @@ class PCTransformer(nn.Module):
         #     nn.Conv1d(128, embed_dim, 1)
         # )
 
+        # 这部分使用
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         # self.cls_pos = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.input_proj = nn.Sequential(
@@ -264,7 +271,8 @@ class PCTransformer(nn.Module):
             nn.LeakyReLU(negative_slope=0.2),
             nn.Conv1d(embed_dim, embed_dim, 1)
         )
-
+        
+        # 构建Transformer的几何感知的Encoder模块
         self.encoder = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
@@ -308,7 +316,7 @@ class PCTransformer(nn.Module):
 
         # trunc_normal_(self.cls_token, std=.02)
         # trunc_normal_(self.cls_pos, std=.02)
-        self.apply(self._init_weights)
+        self.apply(self._init_weights) # 使用apply 来初始化模块和子模块的参数
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -350,28 +358,36 @@ class PCTransformer(nn.Module):
         '''
             inpc : input incomplete point cloud with shape B N(2048) C(3)
         '''
-        # build point proxy
-        bs = inpc.size(0)
-        coor, f = self.grouper(inpc.transpose(1,2).contiguous()) 
+        # build point proxy，inpc表示输入点云，形状为：B x N x C
+        bs = inpc.size(0) # 查看第 0 维的大小，即 B：batch_size
+
+        # self.grouper = DGCNN_Grouper()，coor的shape:B x C(3) x N(128)，f 的shape：B x C(128) x N(128)
+        # 特征 f 的通道 C 会得到提升
+        coor, f = self.grouper(inpc.transpose(1,2).contiguous()) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        # 获得N个中心点中每个点的K个近邻点的索引，shape: [k*N]，e.g 也就是 8 * 128 个近邻点的距离
         knn_index = get_knn_index(coor)
         # NOTE: try to use a sin wave  coor B 3 N, change the pos_embed input dim
         # pos = self.pos_encoding_sin_wave(coor).transpose(1,2)
-        pos =  self.pos_embed(coor).transpose(1,2)
-        x = self.input_proj(f).transpose(1,2)
+        # 对于coor进行位置编码，shape: B x C(3) x N(128) -> B x C(384) x N(128)-> B x 128 x 384，将其通道数提升
+        pos =  self.pos_embed(coor).transpose(1,2) # 使中心点的坐标通过 MLP 对位置编码
+
+        # 
+        x = self.input_proj(f).transpose(1,2) # 特征通过 MLP，以便于与pos 级联形成点代理
         # cls_pos = self.cls_pos.expand(bs, -1, -1)
         # cls_token = self.cls_pos.expand(bs, -1, -1)
         # x = torch.cat([cls_token, x], dim=1)
         # pos = torch.cat([cls_pos, pos], dim=1)
         # encoder
         for i, blk in enumerate(self.encoder):
-            if i < self.knn_layer:
-                x = blk(x + pos, knn_index)   # B N C
+            if i < self.knn_layer: # 由于self.knn_layer = 1，因此只在Encoder的第一层进行attention的注意力计算和中心点相对位置编码的整合，然后继续输入后续网络
+                x = blk(x + pos, knn_index)   # B N C，position embeding与中心点特征求和生成点代理
             else:
                 x = blk(x + pos)
+
         # build the query feature for decoder
         # global_feature  = x[:, 0] # B C
 
-        global_feature = self.increase_dim(x.transpose(1,2)) # B 1024 N 
+        global_feature = self.increase_dim(x.transpose(1,2)) # B N 1024 -> B 1024 N ，将第1维和第2维交换一下
         global_feature = torch.max(global_feature, dim=-1)[0] # B 1024
 
         coarse_point_cloud = self.coarse_pred(global_feature).reshape(bs, -1, 3)  #  B M C(3)

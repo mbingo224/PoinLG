@@ -6,7 +6,9 @@ from .io import IO
 from .build import DATASETS
 import logging
 
-@DATASETS.register_module()
+# @DATASETS.register_module() 在这里相当于执行 ShapeNet = register_module(ShapeNet) 
+# 也就是相当于创建了和ShapeNet同名的变量指向register_module所返回的
+@DATASETS.register_module() # 程序执行类定义的时候会创建类对象，类对象（即KITTI、PCN、ShapeNet这些类对象将会被注册到注册器）
 class ShapeNet(data.Dataset):
     def __init__(self, config):
         self.data_root = config.DATA_PATH

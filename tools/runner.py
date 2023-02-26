@@ -290,7 +290,7 @@ def test_net(args, config):
  
     # 这里和上面dataset的构建是相同的，通过config配置文件获取model的name来查询注册器中的model_dict所添加的model的name，
     # 如有就实例化一个model对象来获取一个model
-    base_model = builder.model_builder(config.model)
+    base_model = builder.model_builder(config.model) # problem
     # load checkpoints，将预训练模型中存储的参数权重state_dict加载到自己构建的base_model
     builder.load_model(base_model, args.ckpts, logger = logger)
     if args.use_gpu:
@@ -319,7 +319,7 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
     with torch.no_grad(): # 测试不需要使用梯度，即不会自动构建计算图
         # 将加载的dataset从idx = 0 开始索引出来taxonomy_ids, model_ids, data
         for idx, (taxonomy_ids, model_ids, data) in enumerate(test_dataloader):
-            taxonomy_id = taxonomy_ids[0] if isinstance(taxonomy_ids[0], str) else taxonomy_ids[0].item()
+            taxonomy_id = taxonomy_ids[0] if isinstance(taxonomy_ids[0], str) else taxonomy_ids[0].item() # .item()用于在只包含一个元素的tensor中提取值，注意是只包含一个元素，否则的话使用.tolist()
             model_id = model_ids[0]
 
             npoints = config.dataset.test._base_.N_POINTS # e.g. 16384
@@ -328,7 +328,7 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
                 partial = data[0].cuda()
                 gt = data[1].cuda()
 
-                ret = base_model(partial)
+                ret = base_model(partial) # 跳转执行PoinTr的forward函数，返回粗糙点云和重建点云（精细点云）
                 coarse_points = ret[0]
                 dense_points = ret[1]
 
@@ -374,7 +374,7 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
                         category_metrics[taxonomy_id] = AverageMeter(Metrics.names())
                     category_metrics[taxonomy_id].update(_metrics)
             elif dataset_name == 'KITTI':
-                # 将数据集中的数据移动到GPU上
+                # 将data中的数据移动到GPU上
                 partial = data.cuda()
                 ret = base_model(partial)
                 dense_points = ret[1]
@@ -397,7 +397,7 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
                             ['%.4f' % m for m in _metrics]), logger=logger)
         if dataset_name == 'KITTI':
             return
-        for _,v in category_metrics.items():
+        for _,v in category_metrics.items(): # 以列表返回可遍历的(键, 值) 元组数组
             test_metrics.update(v.avg())
         print_log('[TEST] Metrics = %s' % (['%.4f' % m for m in test_metrics.avg()]), logger=logger)
 

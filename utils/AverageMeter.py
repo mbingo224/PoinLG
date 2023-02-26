@@ -1,12 +1,12 @@
 
 class AverageMeter(object):
     def __init__(self, items=None):
-        self.items = items
-        self.n_items = 1 if items is None else len(items)
-        self.reset()
+        self.items = items # ['SparseLossL1', 'SparseLossL2', 'DenseLossL1', 'DenseLossL2']
+        self.n_items = 1 if items is None else len(items) # e.g 4
+        self.reset() # 再添加几个实例属性
 
     def reset(self):
-        self._val = [0] * self.n_items
+        self._val = [0] * self.n_items # e.g 测试前：[0， 0，0， 0]
         self._sum = [0] * self.n_items
         self._count = [0] * self.n_items
 

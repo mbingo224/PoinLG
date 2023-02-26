@@ -61,12 +61,13 @@ class Fold(nn.Module):
 class PoinTr(nn.Module):
     def __init__(self, config, **kwargs):
         super().__init__()
-        self.trans_dim = config.trans_dim
-        self.knn_layer = config.knn_layer
-        self.num_pred = config.num_pred
+        self.trans_dim = config.trans_dim # 为 embed_dim 初始化
+        self.knn_layer = config.knn_layer # knn 的层数
+        self.num_pred = config.num_pred # 需要补全的点的数量
         self.num_query = config.num_query
 
-        self.fold_step = int(pow(self.num_pred//self.num_query, 0.5) + 0.5)
+        # 折叠步骤由num_pred和num_query计算而来
+        self.fold_step = int(pow(self.num_pred//self.num_query, 0.5) + 0.5) # 加 0.5 实现四舍五入，可以用round函数来代替
         self.base_model = PCTransformer(in_chans = 3, embed_dim = self.trans_dim, depth = [6, 8], drop_rate = 0., num_query = self.num_query, knn_layer = self.knn_layer)
         
         self.foldingnet = Fold(self.trans_dim, step = self.fold_step, hidden_dim = 256)  # rebuild a cluster point
@@ -89,7 +90,7 @@ class PoinTr(nn.Module):
         return loss_coarse, loss_fine
 
     def forward(self, xyz):
-        q, coarse_point_cloud = self.base_model(xyz) # B M C and B M 3
+        q, coarse_point_cloud = self.base_model(xyz) # B M C and B M 3，对输入的partial部分点去进行FPS、MLP、DGCNN，然后position_embeding输入Transformer
     
         B, M ,C = q.shape
 

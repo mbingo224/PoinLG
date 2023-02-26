@@ -45,7 +45,7 @@ class Registry:
             else:
                 self.build_func = build_from_cfg
         else:
-            self.build_func = build_func
+            self.build_func = build_func # 可以自行构建一个构建函数来构建dataset 和 model
         if parent is not None:
             assert isinstance(parent, Registry)
             parent._add_children(self)
@@ -69,8 +69,9 @@ class Registry:
     def infer_scope():
         """Infer the scope of registry.
         The name of the package where registry is defined will be returned.
+        将返回定义注册表的包的名称
         Example:
-            # in mmdet/models/backbone/resnet.py
+            # in mmdet/models/backbone/resnet.py 如从路径中可以推断出定义注册表models的包为mmdet，而ResNet是在注册表中注册的module
             >>> MODELS = Registry('models')
             >>> @MODELS.register_module()
             >>> class ResNet:
@@ -82,7 +83,7 @@ class Registry:
         # inspect.stack() trace where this function is called, the index-2
         # indicates the frame where `infer_scope()` is called
         filename = inspect.getmodule(inspect.stack()[2][0]).__name__
-        split_filename = filename.split('.')
+        split_filename = filename.split('.') # 将定义注册表的包名导出，e.g 如build
         return split_filename[0]
 
     @staticmethod
@@ -104,7 +105,7 @@ class Registry:
         else:
             return None, key
 
-    @property
+    @property # @property装饰器就是负责把一个方法变成属性调用，但是这里变成了一个只读属性，访问_name变成这种形式object.name
     def name(self):
         return self._name
 
@@ -166,7 +167,7 @@ class Registry:
         self.children[registry.scope] = registry
 
     def _register_module(self, module_class, module_name=None, force=False):
-        if not inspect.isclass(module_class):
+        if not inspect.isclass(module_class): # 判断module_class是否是一个class
             raise TypeError('module must be a class, '
                             f'but got {type(module_class)}')
 
@@ -178,7 +179,7 @@ class Registry:
             if not force and name in self._module_dict:
                 raise KeyError(f'{name} is already registered '
                                f'in {self.name}')
-            self._module_dict[name] = module_class
+            self._module_dict[name] = module_class # 将待注册的模块以k,v的形式存入字典中，k是 module 的 name(如PCN)
 
     def deprecated_register_module(self, cls=None, force=False):
         warnings.warn(
@@ -194,7 +195,7 @@ class Registry:
     def register_module(self, name=None, force=False, module=None):
         """Register a module.
         A record will be added to `self._module_dict`, whose key is the class
-        name or the specified name, and value is the class itself.
+        name or the specified name, 也就是各种模型的名字, 如PCN、GRNet、FoldingNet, and value is the class itself.
         It can be used as a decorator or a normal function.
         Example:
             >>> backbones = Registry('backbone')
@@ -229,17 +230,17 @@ class Registry:
                 'name must be either of None, an instance of str or a sequence'
                 f'  of str, but got {type(name)}')
 
-        # use it as a normal method: x.register_module(module=SomeClass)
+        # 1. use it as a normal method: x.register_module(module=SomeClass)
         if module is not None:
             self._register_module(
                 module_class=module, module_name=name, force=force)
             return module
 
-        # use it as a decorator: @x.register_module()
+        # 2. use it as a decorator: @x.register_module()，因为向注册器添加的module并未实例化，只是一个类对象，故使用cls参数表示类对象
         def _register(cls):
             self._register_module(
-                module_class=cls, module_name=name, force=force)
-            return cls
+                module_class=cls, module_name=name, force=force) # 这相当于为类对象的创建所动态增加的前置功能
+            return cls # 这里执行cls（执行传近来的class的定义来获得类对象），相当于是构建了一个类对象并返回
 
         return _register
 
