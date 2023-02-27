@@ -314,19 +314,19 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
     test_losses = AverageMeter(['SparseLossL1', 'SparseLossL2', 'DenseLossL1', 'DenseLossL2'])
     test_metrics = AverageMeter(Metrics.names()) # 获得metrics评估列表中三个指标名F-Score、CDL1、CDL2
     category_metrics = dict()
-    n_samples = len(test_dataloader) # bs is 1
+    n_samples = len(test_dataloader) # bs is 1，采样的样本数，len(test_dataloader) = 总样本数 / batch_size
 
     with torch.no_grad(): # 测试不需要使用梯度，即不会自动构建计算图
-        # 将加载的dataset从idx = 0 开始索引出来taxonomy_ids, model_ids, data
-        for idx, (taxonomy_ids, model_ids, data) in enumerate(test_dataloader):
+        # 将加载的dataset从idx = 0 开始索引出来taxonomy_ids, model_ids, data，这里data是一个(data['partial'], data['gt'])，包含有部分点云和完整点云的tensor
+        for idx, (taxonomy_ids, model_ids, data) in enumerate(test_dataloader):  # 可查看对应的dataset类的__getitem__()函数来观察返回的
             taxonomy_id = taxonomy_ids[0] if isinstance(taxonomy_ids[0], str) else taxonomy_ids[0].item() # .item()用于在只包含一个元素的tensor中提取值，注意是只包含一个元素，否则的话使用.tolist()
             model_id = model_ids[0]
 
             npoints = config.dataset.test._base_.N_POINTS # e.g. 16384
             dataset_name = config.dataset.test._base_.NAME # e.g. KITTI
             if dataset_name == 'PCN':
-                partial = data[0].cuda()
-                gt = data[1].cuda()
+                partial = data[0].cuda() # e.g test时，输入为：1 x 2048 x 3
+                gt = data[1].cuda() # 让 gt 参与运算时在GPU上进行，例如损失计算，shape: 1 x 16384 x 3
 
                 ret = base_model(partial) # 跳转执行PoinTr的forward函数，返回粗糙点云和重建点云（精细点云）
                 coarse_points = ret[0]

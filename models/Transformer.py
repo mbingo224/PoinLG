@@ -9,7 +9,7 @@ import numpy as np
 from knn_cuda import KNN
 knn = KNN(k=8, transpose_mode=False)
 
-# 这里是为每一个选取的中心点(N)选取其周围的K个近邻点
+# 这里是为每一个选取的中心点(N = 128)选取其周围的K个近邻点
 def get_knn_index(coor_q, coor_k=None):
     coor_k = coor_k if coor_k is not None else coor_q
     # coor: bs, 3, np
@@ -21,7 +21,7 @@ def get_knn_index(coor_q, coor_k=None):
         _, idx = knn(coor_k, coor_q)  # bs k np 这里是由于KNN继承的nn.Module定义了__call__方法了，由于forward 是 __call__的重名，因此调用knn(coor_k, coor_q)实际上是调用__call__方法，即等同于调用 forward 方法
         idx_base = torch.arange(0, batch_size, device=coor_q.device).view(-1, 1, 1) * num_points_k # view(-1, 1, 1) 表示将tensor重构为dim0 x 1 x 1，第0维由于是-1，将会自动补齐
         idx = idx + idx_base
-        idx = idx.view(-1) # 这里是将idx从三维降为1维，相当于展平flaten
+        idx = idx.view(-1) # 这里是将idx从三维降为1维，相当于展平flaten，变成N x K = 8 x 128 = 1024 的索引范围
     
     return idx  # bs*k*np
 
@@ -60,29 +60,33 @@ class Mlp(nn.Module):
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
-        self.num_heads = num_heads
+        self.num_heads = num_heads # 采用的是多头注意力机制，这里是
         head_dim = dim // num_heads
-        # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
-        self.scale = qk_scale or head_dim ** -0.5
+        # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights 
+        # 这里需要结合 Attention 的计算公式来理解，这里scale缩放因子过程就是除以head_dim ** -0.5，参考：
+        self.scale = qk_scale or head_dim ** -0.5 # None or 0.125 = 0.125
 
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias) # 这里升维之所以是乘 3 是为获得三个输入 q k v
+        self.attn_drop = nn.Dropout(attn_drop) # dropout 避免过拟合 e.g attn_drop = 0.0
+        self.proj = nn.Linear(dim, dim) # 这里是对所求的注意力输出进行仿射变换
+        self.proj_drop = nn.Dropout(proj_drop) # e.g proj_drop = 0.0
 
     def forward(self, x):
         B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        # self.qkv(x): 1 x 128 x 384 -> 1 x 128 x 1152，因为这里需要获得 q、k、v三个输入，因此升维一个3，
+        # 这里添加self.num_heads的目的是单头变多头，以便计算多头注意力，后面两个维度是由 384 根据多头的数量 num_heads = 6 拆分出两个维度
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4) # qkv.shape: [3, 1, 6, 128, 64]
         q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+        # q.shape: [1, 6, 128, 64] k.shape: [1, 6, 128, 64] @：矩阵乘法，需要保证倒数两维满足矩阵乘法的要求
+        # q、k、v矩阵的组成形式为：[B, num_heads, N, dim]
+        attn = (q @ k.transpose(-2, -1)) * self.scale # 这是 Attention(Q, K, V)计算公式，乘以缩放因子（0.125）是为了避免数值太大导致 softmax 梯度消失
+        attn = attn.softmax(dim=-1) # 对倒数第一维进行softmax运算，即对列的维度进行运算，使得每一列的元素的所有和为0
+        attn = self.attn_drop(attn) # dropout problem：为什么概率设置为0
 
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C) # 获得级联了各个头（层面信息）的输出
         x = self.proj(x)
         x = self.proj_drop(x)
-        return x
+        return x # 返回级联了各个头（层面信息）的输出，shape:[1, 128, 384]
 
 
 
@@ -193,7 +197,7 @@ class Block(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim) # nn.LayerNorm是在 N(batch_size)方向做归一化，即针对C、H、W通道计算均值和方差，与batch无关
         self.attn = Attention(
             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
@@ -212,7 +216,7 @@ class Block(nn.Module):
 
     def forward(self, x, knn_index = None):
         # x = x + self.drop_path(self.attn(self.norm1(x)))
-        norm_x = self.norm1(x)
+        norm_x = self.norm1(x) # 计算注意力前先进行层归一化，x.shape: 1 x 128(N) x 384(C) layer归一化，这里由于点云数据的特殊性，因此只对 N x C 作归一化，这里的N就相当于图像数据的H X W
         x_1 = self.attn(norm_x)
 
         if knn_index is not None:
@@ -247,12 +251,12 @@ class PCTransformer(nn.Module):
 
         # 这里是获取position_embeding来恢复点云输入序列中的时序信息，这里采用的是一维卷积，因为Transformer就是专门用来处理文本这种一维数据
         # 批归一化的参数选择一般上一输入层形状的N x C 中的 C，输出形状和输入形状是一致的
-        # nn.LeakyReLU()函数是ReLU的弱化版，negative_slope控制负斜率的大小，默认值：1e-2
-        # 对于
+        # nn.LeakyReLU()函数是ReLU的弱化版，negative_slope控制负斜率的大小，负数时斜率不再是0，默认值：1e-2
+        # 提升通道数，生成各个维度的位置信息，当输入中两个位置发生交换时，使得模型能感知这种变化，弥补自注意力机制不能捕捉序列时序信息
         self.pos_embed = nn.Sequential(
             nn.Conv1d(in_chans, 128, 1),
             nn.BatchNorm1d(128),
-            nn.LeakyReLU(negative_slope=0.2),
+            nn.LeakyReLU(negative_slope=0.2), # 这样负数时不会全部归置为0
             nn.Conv1d(128, embed_dim, 1)
         )
         # self.pos_embed_wave = nn.Sequential(
@@ -262,7 +266,8 @@ class PCTransformer(nn.Module):
         #     nn.Conv1d(128, embed_dim, 1)
         # )
 
-        # 这部分使用
+        # 这部分最后一层使用1 x 1 卷积可以增加非线性同时也保证了输出维度不变
+        # 使用 nn.Sequential模块将会自动实现forward方法
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         # self.cls_pos = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.input_proj = nn.Sequential(
@@ -272,7 +277,7 @@ class PCTransformer(nn.Module):
             nn.Conv1d(embed_dim, embed_dim, 1)
         )
         
-        # 构建Transformer的几何感知的Encoder模块
+        # 构建Transformer的几何感知的Encoder模块，这里使用nn.ModuleList，使得可以在forward函数中自定义一些操作
         self.encoder = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
@@ -295,7 +300,7 @@ class PCTransformer(nn.Module):
         self.num_query = num_query
         self.coarse_pred = nn.Sequential(
             nn.Linear(1024, 1024),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=True), # 表示原地执行，表示新计算的结果将会覆盖原值，达到节约内存的效果
             nn.Linear(1024, 3 * num_query)
         )
         self.mlp_query = nn.Sequential(
@@ -371,7 +376,7 @@ class PCTransformer(nn.Module):
         # 对于coor进行位置编码，shape: B x C(3) x N(128) -> B x C(384) x N(128)-> B x 128 x 384，将其通道数提升
         pos =  self.pos_embed(coor).transpose(1,2) # 使中心点的坐标通过 MLP 对位置编码
 
-        # 
+        # f: 1 x 128 x 128 -> 1 x 128(C) x 384(N)
         x = self.input_proj(f).transpose(1,2) # 特征通过 MLP，以便于与pos 级联形成点代理
         # cls_pos = self.cls_pos.expand(bs, -1, -1)
         # cls_token = self.cls_pos.expand(bs, -1, -1)

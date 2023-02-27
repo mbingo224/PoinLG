@@ -16,7 +16,7 @@ from utils import registry
  >>> register_module('ResNet')
  注册器的字典中将会添加元素：{'ResNet': ResNet}
 """
-DATASETS = registry.Registry('dataset')
+DATASETS = registry.Registry('dataset') # 创建用于放置自行构建的数据集的注册器对象dataset，同理在models包下构建了用于放置自定义的模型的注册器对象models
 
 
 def build_dataset_from_cfg(cfg, default_args = None):

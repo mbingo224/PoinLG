@@ -27,11 +27,12 @@ def dataset_builder(args, config):
         sampler = None
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.others.bs if shuffle else 1,
                                                 shuffle = shuffle, 
-                                                drop_last = config.others.subset == 'train',
+                                                drop_last = config.others.subset == 'train', # 设置为true，将会把最后一个不满batch_size的样本丢弃掉
                                                 num_workers = int(args.num_workers),
                                                 worker_init_fn=worker_init_fn)
     return sampler, dataloader
 
+# 构建模型相对于构建数据集要简洁很多
 def model_builder(config):
     model = build_model_from_cfg(config)
     return model

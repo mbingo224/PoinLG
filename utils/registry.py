@@ -43,7 +43,7 @@ class Registry:
             if parent is not None:
                 self.build_func = parent.build_func
             else:
-                self.build_func = build_from_cfg
+                self.build_func = build_from_cfg # 将注册器构建model或dataset的方法从build_from_cfg函数来完成
         else:
             self.build_func = build_func # 可以自行构建一个构建函数来构建dataset 和 model
         if parent is not None:
@@ -271,10 +271,10 @@ def build_from_cfg(cfg, registry, default_args=None):
     if default_args is not None:
         cfg = config.merge_new_config(cfg, default_args)
 
-    obj_type = cfg.get('NAME')
+    obj_type = cfg.get('NAME') # e.g 将cfgs/dataset_configs/PCN.yaml下的配置dict中的dataset/model名字取出来
 
     if isinstance(obj_type, str):
-        obj_cls = registry.get(obj_type)
+        obj_cls = registry.get(obj_type) # 获得放置在注册器中的名为obj_type的的类对象，可能是数据集dataset类或模型model类
         if obj_cls is None:
             raise KeyError(
                 f'{obj_type} is not in the {registry.name} registry')
@@ -284,7 +284,8 @@ def build_from_cfg(cfg, registry, default_args=None):
         raise TypeError(
             f'type must be a str or valid type, but got {type(obj_type)}')
     try:
-        return obj_cls(cfg)
+        return obj_cls(cfg) # 将注册器中存储的类对象实例化，获得已经初始化的实例对象，如 PCN 模型的实例对象，
+                            # 这样将获得一个包含基础层参数的模型，可参见 ./models/PCN.py下的PCN的__init__.py
     except Exception as e:
         # Normal TypeError does not print class name.
         raise type(e)(f'{obj_cls.__name__}: {e}')
