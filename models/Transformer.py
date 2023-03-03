@@ -25,18 +25,25 @@ def get_knn_index(coor_q, coor_k=None):
     
     return idx  # bs*k*np
 
+# knn 几何感知模块获得包含局部特征和全局特征的输出feature
 def get_graph_feature(x, knn_index, x_q=None):
 
-        #x: bs, np, c, knn_index: bs*k*np
+        # x: bs, np, c, test时即1 128 384， knn_index: bs*k*np，即 1 8 128
         k = 8
         batch_size, num_points, num_dims = x.size()
         num_query = x_q.size(1) if x_q is not None else num_points
+        # problem 索引时为什么不会超出范围，[1, 128, 384]->[1 * 128, 384]->[1024, 384]
         feature = x.view(batch_size * num_points, num_dims)[knn_index, :]
-        feature = feature.view(batch_size, k, num_query, num_dims)
+        # 这里为了合并相对位置feature（局部特征，实际上应该是 feature - x）和 绝对位置x（全局特征）
+        # 将feature [1024, 384]的维度上升为[1, 8, 128, 384] 和 将x [1, 128, 384] 提升为[1, 8, 128, 384]
+        feature = feature.view(batch_size, k, num_query, num_dims) # [bs, 8, 128, 384]
         x = x_q if x_q is not None else x
-        x = x.view(batch_size, 1, num_query, num_dims).expand(-1, k, -1, -1)
-        feature = torch.cat((feature - x, x), dim=-1)
-        return feature  # b k np c
+        x = x.view(batch_size, 1, num_query, num_dims).expand(-1, k, -1, -1) # 将输入 x 进行扩维，[1, 1 , 128, 384] -> [1, 8, 128, 384]
+        
+        # problem: 这里为什么局部特征还需要减去全局特征，再去做级联？ 原因是：
+        # 这里是 KNN 
+        feature = torch.cat((feature - x, x), dim=-1) # 扩维后的输入（全局特征）与 由knn计算得来的局部特征级联
+        return feature  # b k np c，合并相对位置feature 和 绝对位置x,
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -201,6 +208,7 @@ class Block(nn.Module):
         self.attn = Attention(
             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
+        # 这里nn.Identity()输入是什么输出就是什么，即只是增加一层无用层而以
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
@@ -217,16 +225,21 @@ class Block(nn.Module):
     def forward(self, x, knn_index = None):
         # x = x + self.drop_path(self.attn(self.norm1(x)))
         norm_x = self.norm1(x) # 计算注意力前先进行层归一化，x.shape: 1 x 128(N) x 384(C) layer归一化，这里由于点云数据的特殊性，因此只对 N x C 作归一化，这里的N就相当于图像数据的H X W
-        x_1 = self.attn(norm_x)
+        x_1 = self.attn(norm_x) # 计算多头自注意力，norm_x.shape:[1, 128, 384]
 
-        if knn_index is not None:
-            knn_f = get_graph_feature(norm_x, knn_index)
-            knn_f = self.knn_map(knn_f)
-            knn_f = knn_f.max(dim=1, keepdim=False)[0]
-            x_1 = torch.cat([x_1, knn_f], dim=-1)
-            x_1 = self.merge_map(x_1)
+        if knn_index is not None: # 第一层 knn计算，即引入的另一个输入获得几何感知，相当于encorder的第一层有两个输入，一个是常规的q、k、v计算注意力
+            knn_f = get_graph_feature(norm_x, knn_index) # 合并相对位置feature 和 绝对位置x
+            knn_f = self.knn_map(knn_f) # 线性映射后降维为 [1, 128, 384]
+            # 按维度dim 返回最大值，这里是返回每一行的最大值，最大值和索引各是一个tensor，
+            # torch.max()[0]: 只返回最大值，不返回索引，keepdim表示是否按照原输入的维度形式输出，默认False
+            knn_f = knn_f.max(dim=1, keepdim=False)[0] # knn几何感知模块获得的特征在
+
+            # 将KNN所获得的特征knn_f 与经过 encorder 第一层多头注意力计算的x_1 在最后一个维度上进行级联
+            # Encoder 第一层的两个输入的级联
+            x_1 = torch.cat([x_1, knn_f], dim=-1) # x_1.shape: [bs, 128, 768]
+            x_1 = self.merge_map(x_1) # 映射到原始维度，x_1.shape:[1, 128, 384]
         
-        x = x + self.drop_path(x_1)
+        x = x + self.drop_path(x_1) # dropout 放置在后面效果更好
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
@@ -252,12 +265,13 @@ class PCTransformer(nn.Module):
         # 这里是获取position_embeding来恢复点云输入序列中的时序信息，这里采用的是一维卷积，因为Transformer就是专门用来处理文本这种一维数据
         # 批归一化的参数选择一般上一输入层形状的N x C 中的 C，输出形状和输入形状是一致的
         # nn.LeakyReLU()函数是ReLU的弱化版，negative_slope控制负斜率的大小，负数时斜率不再是0，默认值：1e-2
-        # 提升通道数，生成各个维度的位置信息，当输入中两个位置发生交换时，使得模型能感知这种变化，弥补自注意力机制不能捕捉序列时序信息
+        # 提升通道数，可以丰富特征，容易将点与点之间区分，但是也不能太大，会淡化点与点之间的关系，生成各个维度的位置信息，当输入中两个位置发生交换时，使得模型能感知这种变化，弥补自注意力机制不能捕捉序列时序信息
+        # 通道数 C：3->128->384
         self.pos_embed = nn.Sequential(
-            nn.Conv1d(in_chans, 128, 1),
+            nn.Conv1d(in_chans, 128, 1), # NOTE: Conv1d 只对 B C N 三个维度中的 C 维度进行计算
             nn.BatchNorm1d(128),
             nn.LeakyReLU(negative_slope=0.2), # 这样负数时不会全部归置为0
-            nn.Conv1d(128, embed_dim, 1)
+            nn.Conv1d(128, embed_dim, 1) # 这里就是相当于MLP(全连接层)
         )
         # self.pos_embed_wave = nn.Sequential(
         #     nn.Conv1d(60, 128, 1),
@@ -268,8 +282,10 @@ class PCTransformer(nn.Module):
 
         # 这部分最后一层使用1 x 1 卷积可以增加非线性同时也保证了输出维度不变
         # 使用 nn.Sequential模块将会自动实现forward方法
+        # 使用 nn.Parameter可以让这个cls_token作为一个像权重那样的可学习参数，随着网络的训练不断的调优
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         # self.cls_pos = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        # 通道数 C：128->384->384
         self.input_proj = nn.Sequential(
             nn.Conv1d(128, embed_dim, 1),
             nn.BatchNorm1d(embed_dim),
@@ -289,7 +305,8 @@ class PCTransformer(nn.Module):
         #     nn.ReLU(inplace=True),
         #     nn.Linear(1024, 1024)
         # )
-
+        # 通过对比发现利用这种巻积这种方式去升维的方式相比使用线性层的方式，网络相对更深，且非线性化程度更好
+        # 查阅可知：对前层是全连接的全连接层可以转化为卷积核为1x1的卷积，这样可以减少参数，但模型的迁移性减弱
         self.increase_dim = nn.Sequential(
             nn.Conv1d(embed_dim, 1024, 1),
             nn.BatchNorm1d(1024),
@@ -371,29 +388,40 @@ class PCTransformer(nn.Module):
         coor, f = self.grouper(inpc.transpose(1,2).contiguous()) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
         # 获得N个中心点中每个点的K个近邻点的索引，shape: [k*N]，e.g 也就是 8 * 128 个近邻点的距离
         knn_index = get_knn_index(coor)
+
         # NOTE: try to use a sin wave  coor B 3 N, change the pos_embed input dim
         # pos = self.pos_encoding_sin_wave(coor).transpose(1,2)
-        # 对于coor进行位置编码，shape: B x C(3) x N(128) -> B x C(384) x N(128)-> B x 128 x 384，将其通道数提升
+        # 对于中心点坐标coor进行位置编码，shape: B x C(3) x N(128) -> B x C(384) x N(128)-> B x 128 x 384，将其通道数提升
+        # 位置编码的意义在于保证中心点经 encorder 后的特征仍然保有原有输入的序列信息
+        # NOTE：pos embeding是对最后一个维度（128个点）操作的，即计算所有点与点之间的位置关系，
         pos =  self.pos_embed(coor).transpose(1,2) # 使中心点的坐标通过 MLP 对位置编码
 
+        # 中心点特征f 进行维度变换，变换为与中心点坐标相同的维度，以求和来作为编码器的输入
         # f: 1 x 128 x 128 -> 1 x 128(C) x 384(N)
+        # NOTE：这里有一个problem: 是否可以将 x + pos后再执行 pos_embeding 是否会影响收敛的效果，因为可以认为特征不需要
         x = self.input_proj(f).transpose(1,2) # 特征通过 MLP，以便于与pos 级联形成点代理
+        
+        # expand 仅在维度为1上执行bs次重复操作，以达到升高维数的效果
         # cls_pos = self.cls_pos.expand(bs, -1, -1)
         # cls_token = self.cls_pos.expand(bs, -1, -1)
         # x = torch.cat([cls_token, x], dim=1)
         # pos = torch.cat([cls_pos, pos], dim=1)
         # encoder
         for i, blk in enumerate(self.encoder):
-            if i < self.knn_layer: # 由于self.knn_layer = 1，因此只在Encoder的第一层进行attention的注意力计算和中心点相对位置编码的整合，然后继续输入后续网络
-                x = blk(x + pos, knn_index)   # B N C，position embeding与中心点特征求和生成点代理
+            if i < self.knn_layer: # 由于self.knn_layer = 1，因此只在Encoder 和 Decorder的第一层进行attention的注意力计算和中心点相对位置编码的整合，然后继续输入后续网络
+                # 中心点坐标与中心点特征求和作为计算多头注意力的输入，
+                # 并且还对输入执行 knn 几何感知获得局部特征与全局特征
+                x = blk(x + pos, knn_index)   # B N C，这里是图示中DGCNN后第一次求和
             else:
-                x = blk(x + pos)
+                x = blk(x + pos) # i = [1, ... , 5]，不进行 knn 计算
 
         # build the query feature for decoder
         # global_feature  = x[:, 0] # B C
 
-        global_feature = self.increase_dim(x.transpose(1,2)) # B N 1024 -> B 1024 N ，将第1维和第2维交换一下
-        global_feature = torch.max(global_feature, dim=-1)[0] # B 1024
+        global_feature = self.increase_dim(x.transpose(1,2)) # B N 1024 -> B 1024 N（转置），线性投射升维
+        # 理论上最大池化虽然可以获得全局特征，但是会不可避免的导致局部细节特征的丢失
+        #  max 对称操作使得输入点的顺序不会对模型预测产生影响，保证置换不变性的有效
+        global_feature = torch.max(global_feature, dim=-1)[0] # B 1024，
 
         coarse_point_cloud = self.coarse_pred(global_feature).reshape(bs, -1, 3)  #  B M C(3)
 
