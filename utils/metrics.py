@@ -39,19 +39,19 @@ class Metrics(object):
         _items = cls.items()
         _values = [0] * len(_items)
         for i, item in enumerate(_items):
-            eval_func = eval(item['eval_func'])
+            eval_func = eval(item['eval_func']) # 跳转去执行eval_func这个key所指向的函数
             _values[i] = eval_func(pred, gt)
 
         return _values
 
     @classmethod
     def items(cls):
-        return [i for i in cls.ITEMS if i['enabled']] # 需要保证ITEMS列表中的字典对象元素的enabled标志位为true
+        return [i for i in cls.ITEMS if i['enabled']] # 获得ITEMS，需要保证ITEMS列表中的字典对象元素的enabled标志位为true
 
     @classmethod
     def names(cls):
         _items = cls.items() # 这里items()方法是上述classmethod，因此_items = ITEMS
-        return [i['name'] for i in _items] # 将评估指标中F-Score、CDL1、CDL2列举出来
+        return [i['name'] for i in _items] # ['F-Score', 'CDL1', 'CDL2']将评估指标中F-Score、CDL1、CDL2列举出来生成一个列表
 
     @classmethod
     def _get_f_score(cls, pred, gt, th=0.01):

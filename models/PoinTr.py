@@ -61,13 +61,13 @@ class Fold(nn.Module):
 class PoinTr(nn.Module):
     def __init__(self, config, **kwargs):
         super().__init__()
-        self.trans_dim = config.trans_dim # 为 embed_dim 初始化
-        self.knn_layer = config.knn_layer # knn 的层数
-        self.num_pred = config.num_pred # 需要补全的点的数量
-        self.num_query = config.num_query
+        self.trans_dim = config.trans_dim # 为 embed_dim 初始化 384
+        self.knn_layer = config.knn_layer # 1 knn 的层数
+        self.num_pred = config.num_pred # 需要补全的点的数量，因为本模型只负责恢复缺失的点云(N = 14336)，最终再和原输入的点云(N = 2048)执行加和运算得到完整的点云(N = 14336 + 2048 = 16384)
+        self.num_query = config.num_query # 224 这里num_query 表示对原始输入点云（残缺点云）进行采样的数值
 
-        # 折叠步骤由num_pred和num_query计算而来
-        self.fold_step = int(pow(self.num_pred//self.num_query, 0.5) + 0.5) # 加 0.5 实现四舍五入，可以用round函数来代替，注意观察这里的depth，理论上Transformer的encorder和decorder均是6层，因此这里解码层改变为8层是否会对解码有促进作用，待验证
+        # 折叠步骤fold_step=8 由num_pred和num_query计算而来
+        self.fold_step = int(pow(self.num_pred//self.num_query, 0.5) + 0.5) # 14336 // 224 = 64, 加 0.5 实现四舍五入，可以用round函数来代替，注意观察这里的depth，理论上Transformer的encorder和decorder均是6层，因此这里解码层改变为8层是否会对解码有促进作用，待验证
         self.base_model = PCTransformer(in_chans = 3, embed_dim = self.trans_dim, depth = [6, 8], drop_rate = 0., num_query = self.num_query, knn_layer = self.knn_layer)
         
         self.foldingnet = Fold(self.trans_dim, step = self.fold_step, hidden_dim = 256)  # rebuild a cluster point
@@ -90,35 +90,43 @@ class PoinTr(nn.Module):
         return loss_coarse, loss_fine
 
     def forward(self, xyz):
+        # 经过PCTransformer模块计算得到粗糙点云coarse_point_cloud（bs, 224, 3）和 decorder 输出的包含全局和局部特征的注意力predicted proxies: q（bs, 224, 384）
         q, coarse_point_cloud = self.base_model(xyz) # B M C and B M 3，对输入的partial部分点去进行FPS、MLP、DGCNN，然后position_embeding输入Transformer
     
         B, M ,C = q.shape
-
+        # q.shape: B N(224) C(384)->B C(384) N(224)->B C(1024) N(224)->B N(224) C(1024) 对词向量的维度C作变换
         global_feature = self.increase_dim(q.transpose(1,2)).transpose(1,2) # B M 1024
-        global_feature = torch.max(global_feature, dim=1)[0] # B 1024
-
+        global_feature = torch.max(global_feature, dim=1)[0] # B 1024，最大池化保证置换不变性，在哪一个维度上执行最大池化，这个维度就会消失
+        
+        # global_feature.shape: [1, 1024]->[1, 1, 1024]->[1, 224, 1024]
+        # 细化模块foldingnet的输入：decorder-encorder 整合的特征global_feature、初始预测的位置特征粗糙点云coarse_point_cloud、
+        # decorder-encorder 整合的特征未最大池化 q 级联获得，加入q 可能使细化效果更好
         rebuild_feature = torch.cat([
             global_feature.unsqueeze(-2).expand(-1, M, -1),
             q,
-            coarse_point_cloud], dim=-1)  # B M 1027 + C
+            coarse_point_cloud], dim=-1)  # B M(224) 1027 + C(1411)
 
-        rebuild_feature = self.reduce_map(rebuild_feature.reshape(B*M, -1)) # BM C
+        rebuild_feature = self.reduce_map(rebuild_feature.reshape(B*M, -1)) # BM C(384), 降低维数的全连接映射
         # # NOTE: try to rebuild pc
         # coarse_point_cloud = self.refine_coarse(rebuild_feature).reshape(B, M, 3)
 
         # NOTE: foldingNet
-        relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M 3 S
+        # 将上述合并特征输入 FoldingNet 预测相对位置
+        relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M 3 S(64)
+        # rebuild_points：[1, 14336, 3]，变成绝对位置rebuild_points，又再一次整合了粗糙点云输入，补充特征
         rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3
 
         # NOTE: fc
         # relative_xyz = self.refine(rebuild_feature)  # BM 3S
         # rebuild_points = (relative_xyz.reshape(B,M,3,-1) + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)
 
-        # cat the input
+        # cat the input，获得原始输入的 num_query 个采样点的稀疏点云
         inp_sparse = fps(xyz, self.num_query)
+        # coarse_point_cloud：[1, 448, 3]，和预测中心点在点云数量维度上级联（224+224），有利于计算后续的 SparseLoss，有监督预测的粗糙点云
         coarse_point_cloud = torch.cat([coarse_point_cloud, inp_sparse], dim=1).contiguous()
+        # rebuild_points：[1, 16384, 3]，原始点云与细化后重构的全部点云级联作为完整点云输出
         rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous()
 
-        ret = (coarse_point_cloud, rebuild_points)
+        ret = (coarse_point_cloud, rebuild_points) # ([1, 448, 3]，[1, 16384, 3])
         return ret
 

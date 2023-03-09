@@ -49,9 +49,9 @@ def build_opti_sche(base_model, config):
         raise NotImplementedError()
 
     sche_config = config.scheduler
-    if sche_config.type == 'LambdaLR':
+    if sche_config.type == 'LambdaLR': # 使用函数（Lambda）来直接返回新的学习率
         scheduler = build_lambda_sche(optimizer, sche_config.kwargs)  # misc.py
-    elif sche_config.type == 'StepLR':
+    elif sche_config.type == 'StepLR': # 每个固定步长 step_size 后按固定比例（gamma）衰减学习率
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, **sche_config.kwargs)
     else:
         raise NotImplementedError()

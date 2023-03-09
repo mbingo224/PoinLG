@@ -151,3 +151,6 @@ models/pointrvrc/mm3d_pn2
 virtual_env/
 # Pycharm的开发配置目录
 .idea/
+
+# 调试配置目录
+.vscode
