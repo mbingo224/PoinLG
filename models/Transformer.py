@@ -313,8 +313,15 @@ class PCTransformer(nn.Module):
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         # self.cls_pos = nn.Parameter(torch.zeros(1, 1, embed_dim))
         # 通道数 C：128->384->384
-        self.input_proj = nn.Sequential(
-            nn.Conv1d(128, embed_dim, 1),
+        # self.input_proj = nn.Sequential(
+        #     nn.Conv1d(128, embed_dim, 1),
+        #     nn.BatchNorm1d(embed_dim),
+        #     nn.LeakyReLU(negative_slope=0.2),
+        #     nn.Conv1d(embed_dim, embed_dim, 1)
+        # )
+
+        self.input_proj_cat = nn.Sequential(
+            nn.Conv1d(384, embed_dim, 1),
             nn.BatchNorm1d(embed_dim),
             nn.LeakyReLU(negative_slope=0.2),
             nn.Conv1d(embed_dim, embed_dim, 1)
@@ -415,6 +422,11 @@ class PCTransformer(nn.Module):
         # 中心点坐标coor的shape:B x C(3) x N(128)，中心点特征 f 的shape：B x C(128) x N(128)
         # 特征 f 的通道 C 会得到提升
         coor, f = self.grouper(inpc.transpose(1,2).contiguous()) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        coor_1, f_1 = self.grouper(inpc.transpose(1,2).contiguous()) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        coor_2, f_2 = self.grouper(inpc.transpose(1,2).contiguous()) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        
+
+        
         # 获得N个中心点中每个点的K个近邻点的索引，shape: [k*N]，e.g 也就是 8 * 128 个近邻点的距离
         knn_index = get_knn_index(coor)
 
@@ -426,10 +438,12 @@ class PCTransformer(nn.Module):
         pos =  self.pos_embed(coor).transpose(1,2) # 使中心点的坐标通过 MLP 对位置编码
 
         # 中心点特征f 进行维度变换，变换为与中心点坐标相同的维度，以求和来作为编码器的输入
-        # f: 1 x 128 x 128 -> 1 x 128(C) x 384(N)
+        # f: 1 x 128 x 128 -> 1 x 384(C) x 128(N)-> B x 128 x 384，意在增加特征的维度和中心点求和
         # NOTE：这里有一个problem: 是否可以将 x + pos后再执行 pos_embeding 是否会影响收敛的效果，因为可以认为特征不需要
-        x = self.input_proj(f).transpose(1,2) # 特征通过 MLP，以便于与pos 级联形成点代理
-        
+        #x = self.input_proj(f).transpose(1,2) # 特征通过 MLP，以便于与pos 级联形成点代理
+        x = torch.cat([f, f_1, f_2], dim=-1)
+        x = self.input_proj_cat(x)
+
         # expand 仅在维度为1上执行bs次重复操作，以达到升高维数的效果
         # cls_pos = self.cls_pos.expand(bs, -1, -1)
         # cls_token = self.cls_pos.expand(bs, -1, -1)
