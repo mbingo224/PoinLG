@@ -17,13 +17,15 @@ class Fold(nn.Module):
     def __init__(self, in_channel , step , hidden_dim = 512):
         super().__init__()
 
-        self.in_channel = in_channel
+        self.in_channel = in_channel # =trans_dim = in_channel = 384
         self.step = step
 
+        # a: 构建[-1, 1]的长度为 step 的一维张量[step]->[1, step]->[8, 8]->[1, 64]
         a = torch.linspace(-1., 1., steps=step, dtype=torch.float).view(1, step).expand(step, step).reshape(1, -1)
         b = torch.linspace(-1., 1., steps=step, dtype=torch.float).view(step, 1).expand(step, step).reshape(1, -1)
-        self.folding_seed = torch.cat([a, b], dim=0).cuda()
+        self.folding_seed = torch.cat([a, b], dim=0).cuda() # [2, 64]
 
+        # 这里是 1st folding 与 2nd folding 模块的设计，对比原网络的FoldingLayer来分析，和原网络的self.layers是等效的
         self.folding1 = nn.Sequential(
             nn.Conv1d(in_channel + 2, hidden_dim, 1),
             nn.BatchNorm1d(hidden_dim),
@@ -45,15 +47,23 @@ class Fold(nn.Module):
         )
 
     def forward(self, x):
+        # x.shape: [B*M, 384]，其中M=224
         num_sample = self.step * self.step
-        bs = x.size(0)
+        bs = x.size(0) # B*M
+        # in_channel = 384，[B*M, 384, 1]->[bs, 384, 64]
         features = x.view(bs, self.in_channel, 1).expand(bs, self.in_channel, num_sample)
-        seed = self.folding_seed.view(1, 2, num_sample).expand(bs, 2, num_sample).to(x.device)
+        # [2, 64]->[1, 2, 64]->[bs, 2, 64]
+        seed = self.folding_seed.view(1, 2, num_sample).expand(bs, 2, num_sample).to(x.device) # 利用GPU加速计算
 
+        # 与FoldingNet 作为对比, 2D grid（[m, 2]，这里的 m 表示而为网格中 m 个像素点) 就是此处的self.folding_seed
+        # 在此处，m 被假定为 64，由 512(C)调整为 384，这是因为Transformer 的 decorder 所生成而来的，可查阅下述PointTr 的 forward 函数
+        # 将seed 和 features 级联以后活动的特征x([bs, 384+2, 64])
+        # 这里引入 2D grid 就是 foldingnet 将 384+2 高维度的点云特征投射回三维
+        # NOTE: problem: step 的来源 意义值的思考一下？可以结合 FoldingNet 的 encorder 模块思考一下
         x = torch.cat([seed, features], dim=1)
-        fd1 = self.folding1(x)
+        fd1 = self.folding1(x) # fd1.shape:[bs, 384+3, 64]
         x = torch.cat([fd1, features], dim=1)
-        fd2 = self.folding2(x)
+        fd2 = self.folding2(x) # [bs, 3, 64]
 
         return fd2
 

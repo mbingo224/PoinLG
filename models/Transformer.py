@@ -441,8 +441,8 @@ class PCTransformer(nn.Module):
         # f: 1 x 128 x 128 -> 1 x 384(C) x 128(N)-> B x 128 x 384，意在增加特征的维度和中心点求和
         # NOTE：这里有一个problem: 是否可以将 x + pos后再执行 pos_embeding 是否会影响收敛的效果，因为可以认为特征不需要
         #x = self.input_proj(f).transpose(1,2) # 特征通过 MLP，以便于与pos 级联形成点代理
-        x = torch.cat([f, f_1, f_2], dim=-1)
-        x = self.input_proj_cat(x)
+        x = torch.cat([f, f_1, f_2], dim=1)
+        x = self.input_proj_cat(x).transpose(1,2)
 
         # expand 仅在维度为1上执行bs次重复操作，以达到升高维数的效果
         # cls_pos = self.cls_pos.expand(bs, -1, -1)
