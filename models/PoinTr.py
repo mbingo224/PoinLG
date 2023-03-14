@@ -20,9 +20,10 @@ class Fold(nn.Module):
         self.in_channel = in_channel # =trans_dim = in_channel = 384
         self.step = step
 
-        # a: 构建[-1, 1]的长度为 step 的一维张量[step]->[1, step]->[8, 8]->[1, 64]
+        # a: 构建[-1, 1]的长度为 step 的一维张量[step]->[1, step]->[8, 8]->[1, 64]，创建 2D grid，原 foldingnet 是由numpy来创建的
         a = torch.linspace(-1., 1., steps=step, dtype=torch.float).view(1, step).expand(step, step).reshape(1, -1)
         b = torch.linspace(-1., 1., steps=step, dtype=torch.float).view(step, 1).expand(step, step).reshape(1, -1)
+        # 构建 2D grids
         self.folding_seed = torch.cat([a, b], dim=0).cuda() # [2, 64]
 
         # 这里是 1st folding 与 2nd folding 模块的设计，对比原网络的FoldingLayer来分析，和原网络的self.layers是等效的
@@ -48,18 +49,20 @@ class Fold(nn.Module):
 
     def forward(self, x):
         # x.shape: [B*M, 384]，其中M=224
-        num_sample = self.step * self.step
+        num_sample = self.step * self.step # 这里 step 实际上是 2D grid的长和宽，原 FoldingNet 的 step = 45
         bs = x.size(0) # B*M
         # in_channel = 384，[B*M, 384, 1]->[bs, 384, 64]
         features = x.view(bs, self.in_channel, 1).expand(bs, self.in_channel, num_sample)
-        # [2, 64]->[1, 2, 64]->[bs, 2, 64]
+        # [2, 64]->[1, 2, 64]->[bs, 2, 64]，这里的self.folding_seed 即是 foldingnet 的 self.grid
+        # 提升维度目的在于 batch size 一致，作为 seed 引导三维点云的还原生成
         seed = self.folding_seed.view(1, 2, num_sample).expand(bs, 2, num_sample).to(x.device) # 利用GPU加速计算
 
         # 与FoldingNet 作为对比, 2D grid（[m, 2]，这里的 m 表示而为网格中 m 个像素点) 就是此处的self.folding_seed
-        # 在此处，m 被假定为 64，由 512(C)调整为 384，这是因为Transformer 的 decorder 所生成而来的，可查阅下述PointTr 的 forward 函数
+        # 在此处，m 被假定为 64(m = step x step)，由 512(C)调整为 384，这是因为Transformer 的 decorder 所生成而来的，可查阅下述PointTr 的 forward 函数
         # 将seed 和 features 级联以后活动的特征x([bs, 384+2, 64])
         # 这里引入 2D grid 就是 foldingnet 将 384+2 高维度的点云特征投射回三维
         # NOTE: problem: step 的来源 意义值的思考一下？可以结合 FoldingNet 的 encorder 模块思考一下
+        # answer:step来源于构建 2D grid的时候的grid 的长和宽
         x = torch.cat([seed, features], dim=1)
         fd1 = self.folding1(x) # fd1.shape:[bs, 384+3, 64]
         x = torch.cat([fd1, features], dim=1)
@@ -106,6 +109,7 @@ class PoinTr(nn.Module):
         B, M ,C = q.shape
         # q.shape: B N(224) C(384)->B C(384) N(224)->B C(1024) N(224)->B N(224) C(1024) 对词向量的维度C作变换
         global_feature = self.increase_dim(q.transpose(1,2)).transpose(1,2) # B M 1024
+        # 聚合操作这里用的是channel wise 的 max pooling，因为这里获得的是所有通道C中最大值的一个点
         global_feature = torch.max(global_feature, dim=1)[0] # B 1024，最大池化保证置换不变性，在哪一个维度上执行最大池化，这个维度就会消失
         
         # global_feature.shape: [1, 1024]->[1, 1, 1024]->[1, 224, 1024]
@@ -122,7 +126,7 @@ class PoinTr(nn.Module):
 
         # NOTE: foldingNet
         # 将上述合并特征输入 FoldingNet 预测相对位置
-        relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M 3 S(64)
+        relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(224) 3 S(64)
         # rebuild_points：[1, 14336, 3]，变成绝对位置rebuild_points，又再一次整合了粗糙点云输入，补充特征
         rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3
 
