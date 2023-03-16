@@ -428,10 +428,10 @@ class PCTransformer(nn.Module):
         # self.grouper = DGCNN_Grouper()，
         # 中心点坐标coor的shape:B x C(3) x N(128)，中心点特征 f 的shape：B x C(128) x N(128)
         # 特征 f 的通道 C 会得到提升
-        coor, f = self.grouper(inpc.transpose(1,2).contiguous(), 16) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
-        coor_1, f_1 = self.grouper(inpc.transpose(1,2).contiguous(), 48) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
-        coor_2, f_2 = self.grouper(inpc.transpose(1,2).contiguous(), 64) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
-        # 获得多分辨率
+        coor, f = self.grouper(inpc.transpose(1,2).contiguous(), 64) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        coor_1, f_1 = self.grouper(inpc.transpose(1,2).contiguous(), 128) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        coor_2, f_2 = self.grouper(inpc.transpose(1,2).contiguous(), 192) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        # 获得多分辨率，获得的 f: B X C(128) X 64、B X C(128) X 128、B X C(128) X 192
         coor = torch.cat([coor, coor_1, coor_2], dim=2)
         f = torch.cat([f, f_1, f_2], dim=2)
         
@@ -490,6 +490,7 @@ class PCTransformer(nn.Module):
             global_feature.unsqueeze(1).expand(-1, self.num_query, -1), 
             coarse_point_cloud], dim=-1) # B M C+3 = B 224 1024+3，unsqueeze在指定维度位置插入维度为1，达到扩展维度的效果，扩展前后是共享底层数据
         # query_feature 经过 2 层 MLP 形成动态序列（Dynamic Queries）——Decorder 的输入
+        # [B, 224, 1027] -> [B, 1027, 224] -> [B, 384, 224]->[B, 224, 384]
         q = self.mlp_query(query_feature.transpose(1,2)).transpose(1,2) # B M C 
         # decoder
         for i, blk in enumerate(self.decoder):

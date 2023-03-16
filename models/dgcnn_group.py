@@ -77,7 +77,7 @@ class DGCNN_Grouper(nn.Module):
         feature = feature.view(batch_size, k, num_points_q, num_dims).permute(0, 3, 2, 1).contiguous() # B C N K，需要应用contiguous拷贝出一份新的tensor，否则 permute 这些修改不生效
         x_q = x_q.view(batch_size, num_dims, num_points_q, 1).expand(-1, -1, -1, k)
         feature = torch.cat((feature - x_q, x_q), dim=1)
-        return feature # 返回x_q中心点坐标的本身全局特征x_q与考虑邻域的局部特征的
+        return feature # 返回x_q中心点坐标的本身全局特征x_q与考虑邻域的局部特征的 [bs, 2c, np, K(16)]
 
     def forward(self, x, sample_npoints):
 
@@ -112,7 +112,7 @@ class DGCNN_Grouper(nn.Module):
         f = self.layer4(f) # f: [bs, 128, sample_npoints, k(16)]
         f = f.max(dim=-1, keepdim=False)[0] # [bs, 128, sample_npoints]
         # problem：这里有别于原 DGCNN 并没有将上述 4 个EdgeConv 模块提取而来的 edge feature 级联
-        
+
         coor = coor_q # [bs, 3]
 
         return coor, f # 返回中心点坐标[bs, 3, sample_npoints(128)] 和 中心点特征[bs, 128, sample_npoints(128)]
