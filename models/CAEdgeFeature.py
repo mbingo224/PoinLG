@@ -3,9 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pointnet2_ops import pointnet2_utils
 from knn_cuda import KNN
-knn = KNN(k=16, transpose_mode=False)
+# 目前先使用自定义的 KNN 计算，这里的K才是实际控制邻域点数量的参数，前面的k调整没有用
+knn_index = KNN(k=8, transpose_mode=True)
 
-'''
+
 def knn(x, k: int):
     """
     inputs:
@@ -23,7 +24,9 @@ def knn(x, k: int):
 
         ref = x.transpose(2, 1).contiguous()  # (batch_size, num_points, feature_dim)
         query = ref
-        _, idx = KNN(k=k, transpose_mode=True)(ref, query)
+        # 原函数调用出现问题
+        #_, idx = KNN(k=k, transpose_mode=True)(ref, query)
+        _, idx = knn_index(ref, query)
 
     else:
         inner = -2 * torch.matmul(x.transpose(2, 1), x)
@@ -32,7 +35,7 @@ def knn(x, k: int):
         idx = pairwise_distance.topk(k=k, dim=-1)[1]  # (batch_size, num_points, k)
 
     return idx
-'''
+
 
 
 def get_graph_feature(x, k: int = 20, idx=None):
@@ -93,15 +96,21 @@ class EdgeRes(nn.Module):
     def __init__(self, use_SElayer: bool = False):
         super(EdgeRes, self).__init__()
         self.k = 8
+        self.input_trans = nn.Conv1d(3, 4, 1)
         self.conv1 = torch.nn.Conv2d(8, 64, kernel_size=1, bias=False)
         self.conv2 = torch.nn.Conv2d(128, 128, kernel_size=1, bias=False)
-        self.conv3 = torch.nn.Conv2d(256, 1024, kernel_size=1, bias=False)
-        self.conv4 = torch.nn.Conv2d(2176, 512, kernel_size=1, bias=False)
-        self.conv5 = torch.nn.Conv2d(1024, 256, kernel_size=1, bias=False)
+        #self.conv3 = torch.nn.Conv2d(256, 1024, kernel_size=1, bias=False)
+        self.conv3 = torch.nn.Conv2d(256, 768, kernel_size=1, bias=False)
+        #self.conv4 = torch.nn.Conv2d(2176, 512, kernel_size=1, bias=False)
+        self.conv4 = torch.nn.Conv2d(1664, 384, kernel_size=1, bias=False)
+
+        #self.conv5 = torch.nn.Conv2d(1024, 256, kernel_size=1, bias=False)
+        self.conv5 = torch.nn.Conv2d(768, 256, kernel_size=1, bias=False)
+
         self.conv6 = torch.nn.Conv2d(512, 128, kernel_size=1, bias=False)
 
         # debug,        
-        self.conv7 = torch.nn.Conv2d(256, 128, kernel_size=1, bias=False)
+        self.conv7 = torch.nn.Conv2d(256, 3, kernel_size=1, bias=False)
         self.conv8 = torch.nn.Conv2d(256, 128, kernel_size=1, bias=False)
 
 
@@ -117,8 +126,10 @@ class EdgeRes(nn.Module):
 
         self.bn1 = torch.nn.BatchNorm2d(64)
         self.bn2 = torch.nn.BatchNorm2d(128)
-        self.bn3 = torch.nn.BatchNorm2d(1024)
-        self.bn4 = torch.nn.BatchNorm2d(512)
+        #self.bn3 = torch.nn.BatchNorm2d(1024)
+        self.bn3 = torch.nn.BatchNorm2d(768)
+        #self.bn4 = torch.nn.BatchNorm2d(512)
+        self.bn4 = torch.nn.BatchNorm2d(384)
         self.bn5 = torch.nn.BatchNorm2d(256)
         self.bn6 = torch.nn.BatchNorm2d(128)
         self.bn7 = torch.nn.BatchNorm2d(3)
@@ -128,6 +139,7 @@ class EdgeRes(nn.Module):
 
     def forward(self, x):
         coor = x # [bs, 3, 2048]
+        x = self.input_trans(x) # bs 3 np -> bs 4 np(2048)
 
         npoints = x.size()[2]
         # x: [batch_size, 4, num_points]
@@ -149,16 +161,18 @@ class EdgeRes(nn.Module):
             x = x.max(dim=-1, keepdim=False)[0]  # [bs, 128, num_points]
 
         x = get_graph_feature(x, k=self.k)  # [bs, 256, num_points, k]
-        x = self.bn3(self.conv3(x))  # [batch_size, 1024, num_points, k]
-        x = x.max(dim=-1, keepdim=False)[0]  # [bs, 1024, num_points]
+        x = self.bn3(self.conv3(x))  # [batch_size, 768/1024, num_points, k]
+        x = x.max(dim=-1, keepdim=False)[0]  # [bs, 768/1024, num_points]
 
-        x, _ = torch.max(x, 2)  # [batch_size, 1024]
-        x = x.view(-1, 1024)  # [batch_size, 1024]
-        x = x.view(-1, 1024, 1).repeat(1, 1, npoints)  # [batch_size, 1024, num_points]
-        x = torch.cat([x, pointfeat], 1)  # [batch_size, 1088, num_points]
+        x, _ = torch.max(x, 2)  # [batch_size, 768/1024]
+        #x = x.view(-1, 1024)  # [batch_size, 1024]
+        x = x.view(-1, 768)  # [batch_size, 768]
+        #x = x.view(-1, 1024, 1).repeat(1, 1, npoints)  # [batch_size, 768/1024, num_points]
+        x = x.view(-1, 768, 1).repeat(1, 1, npoints)  # [batch_size, 768/1024, num_points]
+        x = torch.cat([x, pointfeat], 1)  # [batch_size, 832/1088, num_points]
 
         if self.use_SElayer:
-            x = get_graph_feature(x, k=self.k)  # [bs, 2176, num_points, k]
+            x = get_graph_feature(x, k=self.k)  # [bs, 1664/2176, num_points, k]
             x = F.relu(self.se4(self.bn4(self.conv4(x))))
             x = x.max(dim=-1, keepdim=False)[0]  # [bs, 512, num_points]
             x = get_graph_feature(x, k=self.k)  # [bs, 1024, num_points, k]
@@ -168,17 +182,19 @@ class EdgeRes(nn.Module):
             x = F.relu(self.se6(self.bn6(self.conv6(x))))
             x = x.max(dim=-1, keepdim=False)[0]  # [bs, 128, num_points]
         else:
-            x = get_graph_feature(x, k=self.k)  # [bs, 2176, num_points, k]
-            x = F.relu(self.bn4(self.conv4(x)))
-            x = x.max(dim=-1, keepdim=False)[0]  # [bs, 512, num_points]
+            x = get_graph_feature(x, k=self.k)  # [bs, 1664/2176, num_points, k]
+            x = F.relu(self.bn4(self.conv4(x))) # [bs, 384/512, num_point, k]
+            x = x.max(dim=-1, keepdim=False)[0]  # [bs, 384512, num_points]
 
             # 1. DGCNN 的方式
-            # coor_q, x_q = self.fps_downsample(coor, x, 512)
-            # x = get_graph_feature(x_q, k=self.k)  # [bs, 1024, num_points, k]
+            # --------*******-------
+            coor_q, x_q = fps_downsample(coor, x, 512)
+            x = get_graph_feature(x_q, k=self.k)  # [bs, 768/1024, num_points, k]
             # --------*******-------
 
-            # 2. 调整卷积层数和参数的设置的方式
-            x = get_graph_feature(x, k=self.k)  # [bs, 512, num_points, k]
+            # 2. 未调整输入点云数：2048
+            # --------*******-------
+            # x = get_graph_feature(x, k=self.k)  # [bs, 768/1024, num_points, k]
 
             x = F.relu(self.bn5(self.conv5(x)))
             x = x.max(dim=-1, keepdim=False)[0]  # [bs, 256, num_points]
@@ -186,22 +202,27 @@ class EdgeRes(nn.Module):
             x = F.relu(self.bn6(self.conv6(x)))
             x = x.max(dim=-1, keepdim=False)[0]  # [bs, 128, num_points]
         
-        # 1. DGCNN 的方式
-        # coor_q, x_q = self.fps_downsample(coor_q, x, 128)
-        # x = get_graph_feature(x_q, k=self.k)  # [bs, 256, num_points, k]
+        # 1. DGCNN 的方式应用fps下采样获得[bs, 256, num_points]
+        # --------*******-------
+        coor_q, x_q = fps_downsample(coor_q, x, 128)
+        x = get_graph_feature(x_q, k=self.k)  # [bs, 256, num_points, k]
         # --------*******-------
 
-        x = get_graph_feature(x, k=self.k)  # [bs, 512, num_points, k]
+        # 2. 未调整输入点云数：2048
+        # --------*******-------
+        # x = get_graph_feature(x, k=self.k)  # [bs, 512, num_points, k]
 
-        # 2. 调整卷积层数和参数的设置的方式
-        coor = self.th(self.conv7(x)) # [bs, 3, num_points, k] 
+        # 调整卷积层数和参数的设置的方式
+        # --------*******-------
+        coor = self.th(self.bn7(self.conv7(x))) # [bs, 3, num_points, k] 
         coor = coor.max(dim=-1, keepdim=False)[0]  # [bs, 3, num_points]
 
-        f = self.th(self.conv8(x)) # [bs, 128, num_points, k]
+        f = F.relu(self.bn8(self.conv8(x))) # [bs, 128, num_points, k]，这里将激活函数nn.Tanh()修改为：F.relu
         f = f.max(dim=-1, keepdim=False)[0]  # [bs, 128, num_points]
         # --------*******-------
-
-        return coor, f
+        
+        # -----如果实验效果可以，尝试将BatchNorm2d改为GroupNorm，将relu改为LeakyReLU------
+        return coor, f # [bs, 3, num_points]，[bs, 128, num_points]
 
 
 class SELayer(nn.Module):
@@ -231,8 +252,8 @@ class SELayer(nn.Module):
 
 
 if __name__=='__main__':
-    input = torch.randn(64,2048,3) # bs = 64, N = 2048
+    input = torch.randn(20,3,2048).to('cuda') # bs = 64, N = 2048
     use_SElayer = False
-    netG = EdgeRes(use_SElayer)
+    netG = EdgeRes(use_SElayer).to('cuda')
     coor, f = netG(input)
-    print(coor, f)
+    print(coor.size(), f.size())

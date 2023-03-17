@@ -428,12 +428,14 @@ class PCTransformer(nn.Module):
         # self.grouper = DGCNN_Grouper()，
         # 中心点坐标coor的shape:B x C(3) x N(128)，中心点特征 f 的shape：B x C(128) x N(128)
         # 特征 f 的通道 C 会得到提升
+        #----------****实验3****----------
         coor, f = self.grouper(inpc.transpose(1,2).contiguous(), 64) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
         coor_1, f_1 = self.grouper(inpc.transpose(1,2).contiguous(), 128) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
         coor_2, f_2 = self.grouper(inpc.transpose(1,2).contiguous(), 192) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
         # 获得多分辨率，获得的 f: B X C(128) X 64、B X C(128) X 128、B X C(128) X 192
         coor = torch.cat([coor, coor_1, coor_2], dim=2)
         f = torch.cat([f, f_1, f_2], dim=2)
+        #----------****实验3****----------
         
         # 获得N个中心点中每个点的K个近邻点的索引，shape: [k*N]，e.g 也就是 8 * 128 个近邻点的距离
         knn_index = get_knn_index(coor)

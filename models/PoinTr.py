@@ -136,10 +136,12 @@ class PoinTr(nn.Module):
 
         # cat the input，获得原始输入的 num_query 个采样点的稀疏点云
         inp_sparse = fps(xyz, self.num_query)
+
+        # 跨层连接, 引入初始输入，trick：这里是否可以引进动态fps
         # coarse_point_cloud：[1, 448, 3]，和预测中心点在点云数量维度上级联（224+224），有利于计算后续的 SparseLoss，有监督预测的粗糙点云
         coarse_point_cloud = torch.cat([coarse_point_cloud, inp_sparse], dim=1).contiguous()
-        # rebuild_points：[1, 16384, 3]，原始点云与细化后重构的全部点云级联作为完整点云输出
-        rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous()
+        # rebuild_points：[1, 16384（2048+14336）, 3]，原始点云与细化后重构的全部点云级联作为完整点云输出
+        rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous() # 原始点云又引入一次
 
         ret = (coarse_point_cloud, rebuild_points) # ([1, 448, 3]，[1, 16384, 3])
         return ret
