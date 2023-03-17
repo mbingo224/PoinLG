@@ -4,6 +4,9 @@ import torch.nn as nn
 from timm.models.layers import DropPath,trunc_normal_
 
 from .dgcnn_group import DGCNN_Grouper
+
+from .CAEdgeFeature import EdgeRes
+
 from utils.logger import *
 import numpy as np
 from knn_cuda import KNN
@@ -293,6 +296,9 @@ class PCTransformer(nn.Module):
         # 可参考：https://zhuanlan.zhihu.com/p/425724743 中解释
         self.grouper = DGCNN_Grouper()  # B 3 N to B C(3) N(128) and B C(128) N(128)
 
+        self.use_SElayer = False
+        self.netG = EdgeRes(self.use_SElayer)
+
         # 这里是获取position_embeding来恢复点云输入序列中的时序信息，这里采用的是一维卷积，因为Transformer就是专门用来处理文本这种一维数据
         # 批归一化的参数选择一般上一输入层形状的N x C 中的 C，输出形状和输入形状是一致的
         # nn.LeakyReLU()函数是ReLU的弱化版，negative_slope控制负斜率的大小，负数时斜率不再是0，默认值：1e-2
@@ -429,14 +435,20 @@ class PCTransformer(nn.Module):
         # 中心点坐标coor的shape:B x C(3) x N(128)，中心点特征 f 的shape：B x C(128) x N(128)
         # 特征 f 的通道 C 会得到提升
         #----------****实验3****----------
-        coor, f = self.grouper(inpc.transpose(1,2).contiguous(), 64) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
-        coor_1, f_1 = self.grouper(inpc.transpose(1,2).contiguous(), 128) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
-        coor_2, f_2 = self.grouper(inpc.transpose(1,2).contiguous(), 192) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
-        # 获得多分辨率，获得的 f: B X C(128) X 64、B X C(128) X 128、B X C(128) X 192
-        coor = torch.cat([coor, coor_1, coor_2], dim=2)
-        f = torch.cat([f, f_1, f_2], dim=2)
+        # coor, f = self.grouper(inpc.transpose(1,2).contiguous(), 64) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        # coor_1, f_1 = self.grouper(inpc.transpose(1,2).contiguous(), 128) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        # coor_2, f_2 = self.grouper(inpc.transpose(1,2).contiguous(), 192) # DGCNN 分别得到中心点坐标coor及中心点特征f，输入点云被转置为B x C x N，contiguous是保证inpc转置以后保证底层数据从不连续转变为连续的
+        # # 获得多分辨率，获得的 f: B X C(128) X 64、B X C(128) X 128、B X C(128) X 192
+        # coor = torch.cat([coor, coor_1, coor_2], dim=2)
+        # f = torch.cat([f, f_1, f_2], dim=2)
         #----------****实验3****----------
         
+        #----------****实验4****----------
+        coor, f = self.netG(inpc.transpose(1,2).contiguous())
+        #----------****实验4****----------
+
+
+
         # 获得N个中心点中每个点的K个近邻点的索引，shape: [k*N]，e.g 也就是 8 * 128 个近邻点的距离
         knn_index = get_knn_index(coor)
 
