@@ -94,11 +94,61 @@ class Latentfeature(nn.Module):
             outs.append(self.Convlayers3[k](x[2])) # 将[64, 256, 3]执行卷积获得[64, 1920, 1]聚合特征
         
         latentfeature = torch.cat(outs,2) # [64, 1920, 3], 将2048、512、128 分别获得的Latent Vector级联concate获得最终的特征
-        
+        #------******实验6******--------
+        # 将这里的 latentfeature 视为 [B, N, C] 直接对其进行 fps 处理获得[bs, 3, num_points]，[bs, 128, num_points]
+        # 这个实验推测成功率不高，因为latentfeature 表示纯高维特征，需要进行特征生成来获得点云
+        # coor, f = fps_downsample
+        #------******实验6******--------
         latentfeature = latentfeature.transpose(1,2) # [64, 3, 1920]
         latentfeature = F.relu(self.bn1(self.conv1(latentfeature))) # [64, 1, 1920]
         latentfeature = torch.squeeze(latentfeature,1) # [64, 1920]
         return latentfeature # [64, 1920]
+
+class _netG(nn.Module):
+    def  __init__(self,num_scales,each_scales_size,point_scales_list,crop_point_num):
+        super(_netG,self).__init__()
+        self.crop_point_num = crop_point_num
+        self.latentfeature = Latentfeature(num_scales,each_scales_size,point_scales_list)
+        self.fc1 = nn.Linear(1920,1024)
+        self.fc2 = nn.Linear(1024,512)
+        self.fc3 = nn.Linear(512,256)
+        
+        self.fc1_1 = nn.Linear(1024,128*512)
+        self.fc2_1 = nn.Linear(512,64*128)#nn.Linear(512,64*256) !
+        self.fc3_1 = nn.Linear(256,64*3)
+        
+#        self.bn1 = nn.BatchNorm1d(1024)
+#        self.bn2 = nn.BatchNorm1d(512)
+#        self.bn3 = nn.BatchNorm1d(256)#nn.BatchNorm1d(64*256) !
+#        self.bn4 = nn.BatchNorm1d(128*512)#nn.BatchNorm1d(256)
+#        self.bn5 = nn.BatchNorm1d(64*128)
+#        
+        self.conv1_1 = torch.nn.Conv1d(512,512,1)#torch.nn.Conv1d(256,256,1) !
+        self.conv1_2 = torch.nn.Conv1d(512,256,1)
+        # 更改“crop_point_num”以控制生成缺失点的数量，defalut = 512
+        self.conv1_3 = torch.nn.Conv1d(256,int((self.crop_point_num*3)/128),1)
+        self.conv2_1 = torch.nn.Conv1d(128,6,1)#torch.nn.Conv1d(256,12,1) !
+        
+#        self.bn1_ = nn.BatchNorm1d(512)
+#        self.bn2_ = nn.BatchNorm1d(256)
+        
+    def forward(self,x):
+        x = self.latentfeature(x) # Final Feature Vector V： [64, 1920],因此输入 x 需要应用fps来获得2048、512、128 的下采样点云作为输入
+        x_1 = F.relu(self.fc1(x)) # FC1，[64(bs), 1024]
+        x_2 = F.relu(self.fc2(x_1)) # FC2，[64, 512]
+        x_3 = F.relu(self.fc3(x_2))  # FC3，MLP，[64, 256]
+
+        pc1_feat = self.fc3_1(x_3) # [64, 192]，可以改成[64, 192]
+        pc1_xyz = pc1_feat.reshape(-1,64,3) #(M_1, 3) [64, 64, 3]由 FC3 生成的 Y_primary, 整体的中心center1
+        
+        #------*****实验7*****-------
+        # 仿照上述代码，去获得coor:[bs, 3, num_points]，f:[bs, 128, num_points], 去加入PoinTr执行实验
+        # 本质上就是对 feature 执行 MLP->reshape 来获得目标点云
+
+
+        return pc1_xyz
+
+
 
 
 

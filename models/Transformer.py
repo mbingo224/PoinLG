@@ -5,7 +5,8 @@ from timm.models.layers import DropPath,trunc_normal_
 
 from .dgcnn_group import DGCNN_Grouper
 
-from .CAEdgeFeature import EdgeRes
+from .CAEdgeFeature import SpareNetEncode,EdgeRes
+
 
 from utils.logger import *
 import numpy as np
@@ -296,8 +297,28 @@ class PCTransformer(nn.Module):
         # 可参考：https://zhuanlan.zhihu.com/p/425724743 中解释
         self.grouper = DGCNN_Grouper()  # B 3 N to B C(3) N(128) and B C(128) N(128)
 
-        self.use_SElayer = False
-        self.netG = EdgeRes(self.use_SElayer)
+        #------***实验4***------
+        # self.use_SElayer = False
+        # self.netG = EdgeRes(self.use_SElayer)
+        #------***实验4***------
+
+        #------***实验5***------
+        self.hide_size = 2048 // 4
+        self.output_size = 1024 // 4
+        self.use_SElayer = True
+        # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
+        self.encode = "Residualnet"
+        self.bottleneck_size = 4096 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
+        self.pre_encoder = SpareNetEncode(
+            hide_size=self.hide_size,
+            output_size=self.output_size,
+            bottleneck_size=self.bottleneck_size,
+            use_SElayer=self.use_SElayer,
+            encode=self.encode,
+        )
+
+        #------***实验5***------
+
 
         # 这里是获取position_embeding来恢复点云输入序列中的时序信息，这里采用的是一维卷积，因为Transformer就是专门用来处理文本这种一维数据
         # 批归一化的参数选择一般上一输入层形状的N x C 中的 C，输出形状和输入形状是一致的
@@ -444,9 +465,13 @@ class PCTransformer(nn.Module):
         #----------****实验3****----------
         
         #----------****实验4****----------
-        coor, f = self.netG(inpc.transpose(1,2).contiguous())
+        # coor, f = self.netG(inpc.transpose(1,2).contiguous())
         #----------****实验4****----------
 
+        #----------****实验5****----------
+        coor, f = self.pre_encoder(inpc.transpose(1,2).contiguous())
+
+        #----------****实验5****----------
 
 
         # 获得N个中心点中每个点的K个近邻点的索引，shape: [k*N]，e.g 也就是 8 * 128 个近邻点的距离
