@@ -321,6 +321,25 @@ class PCTransformer(nn.Module):
         #------***实验5***------
 
         #------***实验6***------
+        # self.hide_size = 2048
+        # self.output_size = 4096
+        # self.use_SElayer = True
+        # # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
+        # self.encode = "Residualnet"
+        # self.bottleneck_size = 4096 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
+        # self.k = 16
+        # self.pre_encoder = SpareNetEncode(
+        #     hide_size=self.hide_size,
+        #     output_size=self.output_size,
+        #     bottleneck_size=self.bottleneck_size,
+        #     use_SElayer=self.use_SElayer,
+        #     encode=self.encode,
+        #     k = self.k
+        # )
+
+        #------***实验6***------
+
+        #------***实验7***------
         self.hide_size = 2048
         self.output_size = 4096
         self.use_SElayer = True
@@ -337,7 +356,7 @@ class PCTransformer(nn.Module):
             k = self.k
         )
 
-        #------***实验6***------
+        #------***实验7***------
 
 
         # 这里是获取position_embeding来恢复点云输入序列中的时序信息，这里采用的是一维卷积，因为Transformer就是专门用来处理文本这种一维数据
@@ -497,6 +516,11 @@ class PCTransformer(nn.Module):
         coor, f = self.pre_encoder(inpc.transpose(1,2).contiguous())
 
         #----------****实验6****----------
+
+        #----------****实验7****----------
+        coor, f = self.pre_encoder(inpc.transpose(1,2).contiguous())
+
+        #----------****实验7****----------
 
 
         # 获得N个中心点中每个点的K个近邻点的索引，shape: [k*N]，e.g 也就是 8 * 128 个近邻点的距离
