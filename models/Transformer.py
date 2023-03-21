@@ -275,6 +275,7 @@ class Block(nn.Module):
         # 这里应该是残差操作（Add），可以和240 行作比较，相当于第一层级联后的时候有三个输入，另外一个输入是未作任何变换的原始输入
         x = x + self.drop_path(x_1) # dropout 放置在后面效果更好，这里由于 p=0.0 因此dropout只是起加深网络的作用
         # 先LayerNorm->MLP->再作一个加深网络，因为还需要恢复原有输入分布，因此还需要将未作归一化之前的输入给加回来
+        # 实际上这里才是残差操作，前面一步只是为了加深网络而已
         x = x + self.drop_path(self.mlp(self.norm2(x))) # layernorm1 的作用是加速训练，避免梯度消失导致模鞍点问题或过拟合
         return x
 
@@ -303,21 +304,40 @@ class PCTransformer(nn.Module):
         #------***实验4***------
 
         #------***实验5***------
-        self.hide_size = 2048 // 4
-        self.output_size = 1024 // 4
+        # self.hide_size = 2048 // 4
+        # self.output_size = 1024 // 4
+        # self.use_SElayer = True
+        # # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
+        # self.encode = "Residualnet"
+        # self.bottleneck_size = 4096 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
+        # self.pre_encoder = SpareNetEncode(
+        #     hide_size=self.hide_size,
+        #     output_size=self.output_size,
+        #     bottleneck_size=self.bottleneck_size,
+        #     use_SElayer=self.use_SElayer,
+        #     encode=self.encode,
+        # )
+
+        #------***实验5***------
+
+        #------***实验6***------
+        self.hide_size = 2048
+        self.output_size = 4096
         self.use_SElayer = True
         # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
         self.encode = "Residualnet"
         self.bottleneck_size = 4096 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
+        self.k = 16
         self.pre_encoder = SpareNetEncode(
             hide_size=self.hide_size,
             output_size=self.output_size,
             bottleneck_size=self.bottleneck_size,
             use_SElayer=self.use_SElayer,
             encode=self.encode,
+            k = self.k
         )
 
-        #------***实验5***------
+        #------***实验6***------
 
 
         # 这里是获取position_embeding来恢复点云输入序列中的时序信息，这里采用的是一维卷积，因为Transformer就是专门用来处理文本这种一维数据
@@ -469,9 +489,14 @@ class PCTransformer(nn.Module):
         #----------****实验4****----------
 
         #----------****实验5****----------
-        coor, f = self.pre_encoder(inpc.transpose(1,2).contiguous())
+        # coor, f = self.pre_encoder(inpc.transpose(1,2).contiguous())
 
         #----------****实验5****----------
+
+        #----------****实验6****----------
+        coor, f = self.pre_encoder(inpc.transpose(1,2).contiguous())
+
+        #----------****实验6****----------
 
 
         # 获得N个中心点中每个点的K个近邻点的索引，shape: [k*N]，e.g 也就是 8 * 128 个近邻点的距离
@@ -514,8 +539,12 @@ class PCTransformer(nn.Module):
         global_feature = self.increase_dim(x.transpose(1,2)) # 升维：B N(128) C(384)->B N 1024 -> B 1024 N（转置），线性投射升维
         # 理论上最大池化虽然可以获得全局特征，但是会不可避免的导致局部细节特征的丢失
         #  max 对称操作使得输入点的顺序不会对模型预测产生影响，保证置换不变性的有效
+        '''!!!!*****重要提示 1*****!!!!!!'''
+        # ------******NOTE：对第2维：N维度 执行max pooling 获得 global feature, 128 点云中最大特征值的一个点******---------
         global_feature = torch.max(global_feature, dim=-1)[0] # 在倒数一维进行最大池化 B 1024 128 -> B 1024(因为计算max的这一维会归0)
 
+        '''!!!!*****重要提示 2*****!!!!!!'''
+        #------***** NOTE：global feature[B, 1024] 通过 MLP(两层线性层) 实现从特征生成粗糙点云 *********----------
         # 位置特征，获得粗糙点云 [bs, 1024]-> [bs, 672] -> [bs, 224, 3] 相当于224个点云
         coarse_point_cloud = self.coarse_pred(global_feature).reshape(bs, -1, 3)  #  B M C(3)
 
@@ -529,6 +558,7 @@ class PCTransformer(nn.Module):
             global_feature.unsqueeze(1).expand(-1, self.num_query, -1), 
             coarse_point_cloud], dim=-1) # B M C+3 = B 224 1024+3，unsqueeze在指定维度位置插入维度为1，达到扩展维度的效果，扩展前后是共享底层数据
         # query_feature 经过 2 层 MLP 形成动态序列（Dynamic Queries）——Decorder 的输入
+        # NOTE:这里mlp实际是用2层一维卷积来等效的，因此需要把 C 的维度给交换到第1维，因为如果是线性层的MLP，需要把 C 维放在第2维（最后面）
         # [B, 224, 1027] -> [B, 1027, 224] -> [B, 384, 224]->[B, 224, 384]
         q = self.mlp_query(query_feature.transpose(1,2)).transpose(1,2) # B M C 
         # decoder
@@ -538,5 +568,5 @@ class PCTransformer(nn.Module):
             else:
                 q = blk(q, x)
 
-        return q, coarse_point_cloud # decorder 输出的整合的特征点云，encorder 预测的粗糙点云
+        return q, coarse_point_cloud # decorder 输出的整合的特征点云 q [bs, 224, 384]，encorder 预测的粗糙点云 coarse_point_cloud [bs, 224, 3]
 

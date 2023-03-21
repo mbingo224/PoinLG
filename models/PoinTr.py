@@ -110,22 +110,25 @@ class PoinTr(nn.Module):
         # q.shape: B N(224) C(384)->B C(384) N(224)->B C(1024) N(224)->B N(224) C(1024) 对词向量的维度C作变换
         global_feature = self.increase_dim(q.transpose(1,2)).transpose(1,2) # B M 1024
         # 聚合操作这里用的是channel wise 的 max pooling，因为这里获得的是所有通道C中最大值的一个点
+        # ------******NOTE：对第1维：N(224)维度 执行max pooling 获得 global feature, 224 点云中最大特征值的一个点******---------
         global_feature = torch.max(global_feature, dim=1)[0] # B 1024，最大池化保证置换不变性，在哪一个维度上执行最大池化，这个维度就会消失
         
-        # global_feature.shape: [1, 1024]->[1, 1, 1024]->[1, 224, 1024]
+        # global_feature.shape: [B, 1024]->[B, 1, 1024]->[1, 224, 1024]获得224个包含全局特征的点云
         # 细化模块foldingnet的输入：decorder-encorder 整合的特征global_feature、初始预测的位置特征粗糙点云coarse_point_cloud、
         # decorder-encorder 整合的特征未最大池化 q 级联获得，加入q 可能使细化效果更好
+        # 特征合并
         rebuild_feature = torch.cat([
             global_feature.unsqueeze(-2).expand(-1, M, -1),
             q,
-            coarse_point_cloud], dim=-1)  # B M(224) 1027 + C(1411)
+            coarse_point_cloud], dim=-1)  # B M(224) 1027+C=1411
 
-        rebuild_feature = self.reduce_map(rebuild_feature.reshape(B*M, -1)) # BM C(384), 降低维数的全连接映射
+        # [B, M, 1411]->[B, M, 384]
+        rebuild_feature = self.reduce_map(rebuild_feature.reshape(B*M, -1)) # BM C(384), 形成 m x 384 降低维数的全连接映射
         # # NOTE: try to rebuild pc
         # coarse_point_cloud = self.refine_coarse(rebuild_feature).reshape(B, M, 3)
 
         # NOTE: foldingNet
-        # 将上述合并特征输入 FoldingNet 预测相对位置
+        # 将上述合并特征输入 FoldingNet 预测相对位置 [B*M, 384]->[B, M, 3, 64], 64 = step * step(step: 2D grid的边长)
         relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(224) 3 S(64)
         # rebuild_points：[1, 14336, 3]，变成绝对位置rebuild_points，又再一次整合了粗糙点云输入，补充特征
         rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3

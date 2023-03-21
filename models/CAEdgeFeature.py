@@ -3,8 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pointnet2_ops import pointnet2_utils
 from knn_cuda import KNN
+
 # 目前先使用自定义的 KNN 计算，这里的K才是实际控制邻域点数量的参数，前面的k调整没有用
-knn_index = KNN(k=8, transpose_mode=True)
+#knn_index = KNN(k=8, transpose_mode=True)
 
 
 def knn(x, k: int):
@@ -24,9 +25,10 @@ def knn(x, k: int):
 
         ref = x.transpose(2, 1).contiguous()  # (batch_size, num_points, feature_dim)
         query = ref
+        #print(k)
         # 原函数调用出现问题
-        #_, idx = KNN(k=k, transpose_mode=True)(ref, query)
-        _, idx = knn_index(ref, query)
+        _, idx = KNN(k=k, transpose_mode=True)(ref, query)
+        #_, idx = knn_index(ref, query)
 
     else:
         inner = -2 * torch.matmul(x.transpose(2, 1), x)
@@ -96,32 +98,99 @@ class SpareNetEncode(nn.Module):
         self,
         bottleneck_size=4096,
         use_SElayer=False,
-        encode="Pointfeat",
+        encode="Residualnet",
         hide_size=2048,
-        output_size=4096
+        output_size=4096,
+        k = 8
     ):
         super(SpareNetEncode, self).__init__()
-        print(encode)
+        #print_log(msg, logger=logger)
+        #print(encode)
         if encode == "Residualnet":
             self.feat_extractor = EdgeConvResFeat(
-                use_SElayer=use_SElayer, k=8, output_size=output_size, hide_size=hide_size
+                use_SElayer=use_SElayer, k = k, output_size=output_size, hide_size=hide_size
             )
         else:
             self.feat_extractor = PointNetfeat(
                 global_feat=True, use_SElayer=use_SElayer, hide_size=hide_size
             )
-        self.linear = nn.Linear(hide_size, bottleneck_size)
-        self.bn = nn.BatchNorm1d(bottleneck_size)
-        self.relu = nn.ReLU()
+        self.linear_1 = nn.Linear(bottleneck_size , bottleneck_size // 2)
+        self.linear_2 = nn.Linear(bottleneck_size // 2, bottleneck_size // 4)
+        self.linear_3 = nn.Linear(bottleneck_size // 4, bottleneck_size // 8)
+        self.linear_4 = nn.Linear(bottleneck_size // 8, 128 * 3)
+
+        #-----***方法1：第一种方式求取 f ***-------
+        self.fc_1 = nn.Linear(bottleneck_size // 2,128 * 512)
+        self.conv1_1 = torch.nn.Conv1d(512,512,1)#torch.nn.Conv1d(256,256,1) !
+        self.conv1_2 = torch.nn.Conv1d(512,256,1)
+        self.conv1_3 = torch.nn.Conv1d(256,128,1)
+        #-----***方法1：第一种方式求取 f ***-------
+
+        #-----***方法2：另外一种方式求取 f ***-------
+        # self.fc_1 = nn.Linear(bottleneck_size // 8,128 * 512)
+        # self.conv1_1 = torch.nn.Conv1d(512,512,1)#torch.nn.Conv1d(256,256,1) !
+        # self.conv1_2 = torch.nn.Conv1d(512,256,1)
+        # self.conv1_3 = torch.nn.Conv1d(256,128,1)
+        #-----***方法2：另外一种方式求取 f ***-------
+
+
+        # self.relu = nn.ReLU()
+        self.relu = nn.LeakyReLU(negative_slope=0.2)
 
     def forward(self, x):
-        coor, f = self.feat_extractor(x)
-        # x = self.linear(x)
-        # x = self.bn(x)
-        # x = self.relu(x)
-        # return x
-        return coor, f
+        #----------****实验5****----------
+        # coor, f = self.feat_extractor(x)
+        # return coor, f
+        #----------****实验5****----------
 
+        #----------****实验6****----------
+        '''
+        ------****NOTE: 在实验6中, 我们都是选择在特征维度为512去线性层变换到目标点云, 但这不是绝对的, 也可以从C=1024
+        就开始进行特征变换到 128 * 3 需要进行实验去确定这个值 可参考 MRNet _netG class 中pc2_xyz的生成******-------
+        '''
+        #-----***方法1：第一种方式求取 f ***-------
+        x = self.feat_extractor(x)
+        x = self.relu(self.linear_1(x)) # [bs, 2048]
+        # 这里计算 f 的原理是: 在高维特征就获得 f 使得 f 包含的特征信息更丰富，因为 x 在之前已经级联了各层次的特征了
+        f = x # [bs, 2048] 实际上这里 f = x 放在哪个位置还需要再实验测试哪个位置效果好一些
+        x = self.relu(self.linear_2(x)) # [bs, 1024]
+        x = self.relu(self.linear_3(x)) # [bs, 512]
+        '''按照 pc2_xyz 的生成, 这一步 self.linear_4 应该设计成: self.linear_4 = nn.Linear(512,64*128)'''
+        x = self.relu(self.linear_4(x)) # [bs, 128 * 3] 
+        #-----***方法1：第一种方式求取 f ***-------
+
+        #-----***方法2：另外一种方式求取 f ***-------
+        # x = self.feat_extractor(x)
+        # x = self.relu(self.linear_1(x))      
+        # x = self.relu(self.linear_2(x))
+        # x = self.relu(self.linear_3(x)) # [bs, 512]
+        # # 这里计算 f 的原理是：保证特征 f 的获取和中心点坐标 coor 的层次是一致的，推测会有利于 Transformer 中的 x + pos
+        # f = x # [bs, 512] 实际上这里 f = x 放在哪个位置还需要再实验测试哪个位置效果好一些
+        '''按照 pc2_xyz 的生成, 这一步 self.linear_4 应该设计成: self.linear_4 = nn.Linear(512,64*128)'''
+        # x = self.relu(self.linear_4(x)) # [bs, 128 * 3]
+        #-----***方法2：另外一种方式求取 f ***-------
+
+        # [bs, 3, 128]，这里是为了满足Transformer encorder的输入 shape 要求，因此转置
+        coor = x.reshape(-1, 128, 3).transpose(1, 2).contiguous() 
+
+        #-----***方法1：第一种方式求取 f ***-------
+        f = self.relu(self.fc_1(f)) # [bs, 2048]->[bs, 512 * 128]
+        f = f.reshape(-1,512,128) # [bs, 512, 128]
+        f = self.relu(self.conv1_1(f))
+        f = self.relu(self.conv1_2(f))
+        f = self.relu(self.conv1_3(f)) # [bs, 128, 128] [B, C, N]
+        #-----***方法1：第一种方式求取 f ***-------
+        
+        #-----***方法2：另外一种方式求取 f ***-------
+        # f = self.relu(self.fc_1(f)) # [bs, 512]->[bs, 512 * 128]
+        # f = f.reshape(-1,512,128) # [bs, 512, 128] # [bs, 512]->[bs, 512 * 128]
+        # f = self.relu(self.conv1_1(f))
+        # f = self.relu(self.conv1_2(f))
+        # f = self.relu(self.conv1_3(f)) # [bs, 128, 128] [B, C, N]
+        #-----***方法2：另外一种方式求取 f ***-------
+        
+        return coor, f # coor:[bs, 3, 128]，f: [bs, 128, 128] [B, C, N]
+        #----------****实验6****----------
 
 class EdgeConvResFeat(nn.Module):
     """
@@ -202,6 +271,7 @@ class EdgeConvResFeat(nn.Module):
         # x : [bs, 3, num_points]
         batch_size = x.size(0)
         coor = x # [bs, 3, 2048]
+        #(self.k)
         if self.use_SElayer:
             x = get_graph_feature(x, k=self.k)
             x = self.relu1(self.se1(self.bn1(self.conv1(x))))
@@ -245,36 +315,39 @@ class EdgeConvResFeat(nn.Module):
         x4 = x.max(dim=-1, keepdim=False)[0] # [bs, 512, num_points]
         x4 = x4 + x4_res # [bs, 512, num_points]
 
-        x = torch.cat((x1, x2, x3, x4), dim=1) # [bs, 1024, num_points]，PointTr 中DGCNN并没有级联前面提取初、中、高层次特征
+        x = torch.cat((x1, x2, x3, x4), dim=1) # [bs, 256/1024, num_points]，PointTr 中DGCNN并没有级联前面提取初、中、高层次特征
         
         #------****Trick：是否可以将这里的conv5修改成 Transformer中的self.input_proj，这样就不必再Transformer里去提升维数
-        x = self.relu5(self.bn5(self.conv5(x))) # [bs, 2048, num_points] 一维卷积
-        # x = self.relu5(self.bn5(self.conv5(x))) # [bs, 128/2048, num_points] 一维卷积
+        x = self.relu5(self.bn5(self.conv5(x))) # [bs, 128/2048, num_points] 一维卷积
+        # x = self.relu5(self.bn5(self.input_proj(x))) # [bs, 128/2048, num_points] 一维卷积
 
 
         #----------****实验5****----------
-        coor, f = fps_downsample(coor, x, 512)
-        coor, f = fps_downsample(coor, f, 256)
-        coor, f = fps_downsample(coor, f, 128)
+        # coor, f = fps_downsample(coor, x, 512)
+        # coor, f = fps_downsample(coor, f, 256)
+        # coor, f = fps_downsample(coor, f, 128)
+
+        # return coor, f
         #----------****实验5****----------
 
         #----------****实验6****----------
         # 对 x:[bs, 4096] 使用 MLP->reshape 去重构中心点云coor 和 f
-        # x1 = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)  # [bs, 2048]，npoints归1，特征被聚合，找到 2048 点中特征最大值
-        # x2 = F.adaptive_avg_pool1d(x, 1).view(batch_size, -1)  # [bs, 2048]，获得的是edge feature的全局平均值
-        # x = torch.cat((x1, x2), 1)  # [bs, 4096]
 
-        # x = x.view(-1, self.output_size)
+        x1 = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)  # [bs, 128/2048]，npoints 维度归1，特征被聚合，找到 2048 点云中可表示最大特征值的一点
+        x2 = F.adaptive_avg_pool1d(x, 1).view(batch_size, -1)  # [bs, 128/2048]，获得的是edge feature的全局平均值
+        x = torch.cat((x1, x2), 1)  # [bs, 256/4096]
+
+        x = x.view(-1, self.output_size)
+        
+        return x # [bs, 4096]
         #----------****实验6****----------
-        # return x # [bs, 4096]
-        return coor, f
 
 
 
 class PointNetfeat(nn.Module):
     """
     input
-    - point_cloud： b x num_dims x npoints_1
+    - point_cloud: b x num_dims x npoints_1
 
     output
     - feture:  b x feature_size
@@ -575,22 +648,52 @@ class SELayer1D(nn.Module):
 
 
 if __name__=='__main__':
-    input = torch.randn(48,3,2048).to('cuda') # bs = 64, N = 2048
-    hide_size = 2048 // 4
-    output_size = 1024 // 4
+    input = torch.randn(2,3,2048).to('cuda') # bs = 64, N = 2048
+    # input = torch.randn(2,3,2048) # bs = 64, N = 2048 # CPU 运算
+
+    #----------****实验5****----------
+    # hide_size = 2048 // 4
+    # output_size = 1024 // 4
+    # use_SElayer = True
+    # # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
+    # encode = "Residualnet"
+    # bottleneck_size = 4096
+    # k = 16
+    # pre_encoder = SpareNetEncode(
+    #                             hide_size=hide_size,
+    #                             output_size=output_size,
+    #                             bottleneck_size=bottleneck_size,
+    #                             use_SElayer=use_SElayer,
+    #                             encode=encode,
+    #                             k = 16,
+    #                             ).to('cuda')
+    # coor, f = pre_encoder(input)
+    #----------****实验5****----------
+
+    #----------****实验6****----------
+    hide_size = 2048
+    output_size = 4096
     use_SElayer = True
     # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
     encode = "Residualnet"
     bottleneck_size = 4096
+    k = 16
     pre_encoder = SpareNetEncode(
                                 hide_size=hide_size,
                                 output_size=output_size,
                                 bottleneck_size=bottleneck_size,
                                 use_SElayer=use_SElayer,
                                 encode=encode,
+                                k = k,
                                 ).to('cuda')
-    # netG = EdgeRes(use_SElayer).to('cuda')
-    # coor, f = netG(input)
-
+    # pre_encoder = SpareNetEncode(
+    #                             hide_size=hide_size,
+    #                             output_size=output_size,
+    #                             bottleneck_size=bottleneck_size,
+    #                             use_SElayer=use_SElayer,
+    #                             encode=encode,
+    #                             )                         
     coor, f = pre_encoder(input)
+    #----------****实验6****----------
+
     print(coor.size(), f.size())
