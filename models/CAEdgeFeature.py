@@ -136,11 +136,18 @@ class SpareNetEncode(nn.Module):
         #----------****实验6****----------
 
         #----------****实验7****----------
-        self.fc_1 = nn.Linear(bottleneck_size // 8,128 * 512)
-        self.conv1_1 = torch.nn.Conv1d(512,512,1)#torch.nn.Conv1d(256,256,1) !
-        self.conv1_2 = torch.nn.Conv1d(512,256,1)
-        self.conv1_3 = torch.nn.Conv1d(256,128,1)
+        # self.fc_1 = nn.Linear(bottleneck_size // 2, 128 * 256)
+        # self.conv1_1 = torch.nn.Conv1d(512,512,1)#torch.nn.Conv1d(256,256,1) !
+        # self.conv1_2 = torch.nn.Conv1d(512,256,1)
+        # self.conv1_3 = torch.nn.Conv1d(256,128,1)
         #----------****实验7****----------
+
+        #----------****实验8****----------
+        self.fc_1 = nn.Linear(bottleneck_size // 2, 128 * 128)
+        self.conv1_1 = torch.nn.Conv1d(128,128,1)#torch.nn.Conv1d(256,256,1) !
+        # self.conv1_2 = torch.nn.Conv1d(512,256,1)
+        # self.conv1_3 = torch.nn.Conv1d(256,128,1)
+        #----------****实验8****----------
 
         # self.relu = nn.ReLU()
         self.relu = nn.LeakyReLU(negative_slope=0.2)
@@ -203,22 +210,35 @@ class SpareNetEncode(nn.Module):
 
 
         #----------****实验7****----------
+        # coor, f = self.feat_extractor(x)
+
+        # f = self.relu(self.linear_1(f)) # [bs, 2048]
+        # f = self.relu(self.linear_2(f)) # [bs, 1024]
+        # f = self.relu(self.linear_3(f)) # [bs, 512]
+
+        #  #-----***方法1：第一种方式求取 f ***-------
+        # f = self.relu(self.fc_1(f)) # [bs, 512]->[bs, 512 * 128]
+        # f = f.reshape(-1,512,128) # [bs, 512, 128]
+        # f = self.relu(self.conv1_1(f)) # nn.Conv1d 
+        # f = self.relu(self.conv1_2(f))
+        # f = self.relu(self.conv1_3(f)) # [bs, 128, 128] [B, C, N]
+        # #-----***方法1：第一种方式求取 f ***-------
+
+        # return coor, f
+        #----------****实验7****----------
+
+        #----------****实验8****----------
         coor, f = self.feat_extractor(x)
 
-        f = self.relu(self.linear_1(f)) # [bs, 2048]
-        f = self.relu(self.linear_2(f)) # [bs, 1024]
-        f = self.relu(self.linear_3(f)) # [bs, 512]
+        f = self.relu(self.linear_1(f)) # [bs, 256]
 
-         #-----***方法1：第一种方式求取 f ***-------
-        f = self.relu(self.fc_1(f)) # [bs, 512]->[bs, 512 * 128]
-        f = f.reshape(-1,512,128) # [bs, 512, 128]
-        f = self.relu(self.conv1_1(f)) # nn.Conv1d 
-        f = self.relu(self.conv1_2(f))
-        f = self.relu(self.conv1_3(f)) # [bs, 128, 128] [B, C, N]
-        #-----***方法1：第一种方式求取 f ***-------
+        f = self.relu(self.fc_1(f)) # [bs, 256]->[bs, 128 * 128]
+        f = f.reshape(-1,128,128) # [bs, 128, 128]
+        f = self.relu(self.conv1_1(f)) # nn.Conv1d  [bs, 128, 128]
+
 
         return coor, f
-        #----------****实验7****----------
+        #----------****实验8****----------
 
 
 class EdgeConvResFeat(nn.Module):
@@ -258,6 +278,14 @@ class EdgeConvResFeat(nn.Module):
             self.hide_size // 2, self.output_size // 2, kernel_size=1, bias=False
         )
 
+        #----------****实验8****----------
+        self.increase_dim = nn.Sequential(
+            nn.Conv1d(self.hide_size // 2, self.output_size // 2, 1), # 
+            nn.BatchNorm1d(self.output_size // 2),
+            nn.LeakyReLU(negative_slope=0.2),
+            nn.Conv1d(self.output_size // 2, self.output_size // 2, 1)
+        )
+        #----------****实验8****----------
        
         # self.input_proj = nn.Sequential(
         #     nn.Conv1d(512, 384, 1),
@@ -280,11 +308,17 @@ class EdgeConvResFeat(nn.Module):
             self.se3 = SELayer(channel=self.hide_size // 8)
             self.se4 = SELayer(channel=self.hide_size // 4)
 
-        self.bn1 = nn.BatchNorm2d(self.hide_size // 16)
-        self.bn2 = nn.BatchNorm2d(self.hide_size // 16)
-        self.bn3 = nn.BatchNorm2d(self.hide_size // 8)
-        self.bn4 = nn.BatchNorm2d(self.hide_size // 4)
-        self.bn5 = nn.BatchNorm1d(self.output_size // 2)
+        # self.bn1 = nn.BatchNorm2d(self.hide_size // 16)
+        # self.bn2 = nn.BatchNorm2d(self.hide_size // 16)
+        # self.bn3 = nn.BatchNorm2d(self.hide_size // 8)
+        # self.bn4 = nn.BatchNorm2d(self.hide_size // 4)
+        # self.bn5 = nn.BatchNorm1d(self.output_size // 2)
+
+        self.bn1 = nn.GroupNorm(4, self.hide_size // 16)
+        self.bn2 = nn.GroupNorm(4, self.hide_size // 16)
+        self.bn3 = nn.GroupNorm(4, self.hide_size // 8)
+        self.bn4 = nn.GroupNorm(4, self.hide_size // 4)
+        self.bn5 = nn.GroupNorm(4, self.output_size // 2)
 
         self.resconv1 = nn.Conv1d(
             self.hide_size // 16, self.hide_size // 16, kernel_size=1, bias=False
@@ -347,9 +381,12 @@ class EdgeConvResFeat(nn.Module):
         x = torch.cat((x1, x2, x3, x4), dim=1) # [bs, 256/1024, num_points]，PointTr 中DGCNN并没有级联前面提取初、中、高层次特征
         
         #------****Trick：是否可以将这里的conv5修改成 Transformer中的self.input_proj，这样就不必再Transformer里去提升维数
-        x = self.relu5(self.bn5(self.conv5(x))) # [bs, 128/2048, num_points] 一维卷积
+        #x = self.relu5(self.bn5(self.conv5(x))) # [bs, 128/2048, num_points] 一维卷积
         # x = self.relu5(self.bn5(self.input_proj(x))) # [bs, 384, num_points] 一维卷积
 
+        #----------****实验8****----------
+        x = self.increase_dim(x) # [bs, 256/128/2048, num_points] 一维卷积
+        #----------****实验8****----------
 
         #----------****实验5****----------
         # coor, f = fps_downsample(coor, x, 512)
@@ -379,9 +416,9 @@ class EdgeConvResFeat(nn.Module):
         x2 = F.adaptive_avg_pool1d(x, 1).view(batch_size, -1)  # [bs, 128/2048]，获得的是edge feature的全局平均值
         x = torch.cat((x1, x2), 1)  # [bs, 256/4096]
 
-        f = x.view(-1, self.output_size) # [bs, 4096]
+        f = x.view(-1, self.output_size) # [bs, output_size(4096)]
         
-        return coor, f # coor: [bs, 3, 128], f: [bs, 4096]
+        return coor, f # coor: [bs, 3, 128], f: [bs, output_size(512/256/4096)]
         #----------****实验7****----------
 
 
@@ -701,25 +738,40 @@ if __name__=='__main__':
     # encode = "Residualnet"
     # bottleneck_size = 4096
     # k = 16
-    # pre_encoder = SpareNetEncode(
-    #                             hide_size=hide_size,
-    #                             output_size=output_size,
-    #                             bottleneck_size=bottleneck_size,
-    #                             use_SElayer=use_SElayer,
-    #                             encode=encode,
-    #                             k = 16,
-    #                             ).to('cuda')
-    # coor, f = pre_encoder(input)
     #----------****实验5****----------
 
     #----------****实验6****----------
-    hide_size = 2048
-    output_size = 4096
+    # hide_size = 2048
+    # output_size = 4096
+    # use_SElayer = True
+    # # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
+    # encode = "Residualnet"
+    # bottleneck_size = 4096
+    # k = 16
+    #----------****实验6****----------
+
+    #----------****实验7****----------
+    # hide_size = 2048
+    # output_size = 4096
+    # use_SElayer = True
+    # # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
+    # encode = "Residualnet"
+    # bottleneck_size = 4096
+    # k = 16
+    #----------****实验7****----------
+
+    #----------****实验8****----------
+    hide_size = 512
+    output_size = 512
     use_SElayer = True
     # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
     encode = "Residualnet"
-    bottleneck_size = 4096
+    bottleneck_size = 512
     k = 16
+    #----------****实验8****----------
+
+
+
     pre_encoder = SpareNetEncode(
                                 hide_size=hide_size,
                                 output_size=output_size,
@@ -736,6 +788,8 @@ if __name__=='__main__':
     #                             encode=encode,
     #                             )                         
     coor, f = pre_encoder(input)
-    #----------****实验6****----------
+    
+
+
 
     print(coor.size(), f.size())

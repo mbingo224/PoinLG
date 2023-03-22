@@ -310,13 +310,6 @@ class PCTransformer(nn.Module):
         # # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
         # self.encode = "Residualnet"
         # self.bottleneck_size = 4096 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
-        # self.pre_encoder = SpareNetEncode(
-        #     hide_size=self.hide_size,
-        #     output_size=self.output_size,
-        #     bottleneck_size=self.bottleneck_size,
-        #     use_SElayer=self.use_SElayer,
-        #     encode=self.encode,
-        # )
 
         #------***实验5***------
 
@@ -328,14 +321,6 @@ class PCTransformer(nn.Module):
         # self.encode = "Residualnet"
         # self.bottleneck_size = 4096 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
         # self.k = 16
-        # self.pre_encoder = SpareNetEncode(
-        #     hide_size=self.hide_size,
-        #     output_size=self.output_size,
-        #     bottleneck_size=self.bottleneck_size,
-        #     use_SElayer=self.use_SElayer,
-        #     encode=self.encode,
-        #     k = self.k
-        # )
 
         #------***实验6***------
 
@@ -347,6 +332,18 @@ class PCTransformer(nn.Module):
         self.encode = "Residualnet"
         self.bottleneck_size = 4096 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
         self.k = 16
+        #------***实验7***------
+
+        #------***实验8***------
+        self.hide_size = 512
+        self.output_size = 512
+        self.use_SElayer = True
+        # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
+        self.encode = "Residualnet"
+        self.bottleneck_size = 512 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
+        self.k = 16
+        #------***实验8***------
+
         self.pre_encoder = SpareNetEncode(
             hide_size=self.hide_size,
             output_size=self.output_size,
@@ -356,7 +353,7 @@ class PCTransformer(nn.Module):
             k = self.k
         )
 
-        #------***实验7***------
+
 
 
         # 这里是获取position_embeding来恢复点云输入序列中的时序信息，这里采用的是一维卷积，因为Transformer就是专门用来处理文本这种一维数据
