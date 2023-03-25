@@ -461,7 +461,7 @@ class PointNetfeat(nn.Module):
         else:
             x = F.relu(self.bn1(self.conv1(x)))  # x: [batch_size, 64, num_points]
             x = F.relu(self.bn2(self.conv2(x)))  # x: [batch_size, 128, num_points]
-            x = self.bn3(self.conv3(x))  # x: [batch_size, 1024, num_points]
+            x = self.bn3(self.conv3(x))  # x: [batch_size, hide_size, num_points]
         x, _ = torch.max(x, 2)  # x: [batch_size, num_points]
         x = x.view(-1, self.hide_size)
         return x

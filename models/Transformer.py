@@ -101,6 +101,9 @@ class Attention(nn.Module):
 
     def forward(self, x):
         B, N, C = x.shape
+
+
+        '''!!!****这是第四章改进的重点: Q、K、V的生成方式将会非常影响局部几何特征(相似的几何结构) GDP是启发'''
         # self.qkv(x): 1 x 128 x 384 -> 1 x 128 x 1152，因为这里需要获得 q、k、v三个输入，因此升维一个3，
         # 这里添加self.num_heads的目的是单头变多头，以便计算多头注意力，后面两个维度是由 384 根据多头的数量 num_heads = 6 拆分出两个维度
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4) # qkv.shape: [3, 1, 6, 128, 64]
@@ -325,13 +328,13 @@ class PCTransformer(nn.Module):
         #------***实验6***------
 
         #------***实验7***------
-        self.hide_size = 2048
-        self.output_size = 4096
-        self.use_SElayer = True
-        # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
-        self.encode = "Residualnet"
-        self.bottleneck_size = 4096 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
-        self.k = 16
+        # self.hide_size = 2048
+        # self.output_size = 4096
+        # self.use_SElayer = True
+        # # "Pointfeat"，这里是选择使用的特征提取模块，Residualnet是基于EdgeConvResFeat，Pointfeat 基于 Pointfeat
+        # self.encode = "Residualnet"
+        # self.bottleneck_size = 4096 # 这是对经过 Residualnet/Pointfeat 特征提取模块进行 MLP 处理的尺度设计
+        # self.k = 16
         #------***实验7***------
 
         #------***实验8***------
@@ -574,6 +577,8 @@ class PCTransformer(nn.Module):
         # 查询集：coor_q，参考集：coor_k，在参考集coor_k（由DGCNN所提取出的中心点集coor[1, 3, 128]）中搜寻查询集coor_q(由Encorder计算而来的粗糙点云[1, 3, 224])中每个点的 K = 8个近邻点的索引，以一维数组的形式返回
         cross_knn_index = get_knn_index(coor_k=coor, coor_q=coarse_point_cloud.transpose(1, 2).contiguous())
         
+        '''!!!!!*****Tips: 这里生成query_feature的原理和前述encorder的输入 x + pos是一样的, 将特征与位置(坐标融合),
+        一个Tirick就是使用跳层连接引入局部中心点特征 f ******!!!!!!'''
         # 在倒数第一维将global_feature（全局特征）、coarse_point_cloud（位置特征）进行级联，global_feature：[1, 1024]->[1, 1, 1024]->[1, 224, 1024]
         query_feature = torch.cat([
             global_feature.unsqueeze(1).expand(-1, self.num_query, -1), 
