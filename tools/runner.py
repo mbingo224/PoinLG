@@ -81,13 +81,16 @@ def run_net(args, config, train_writer=None, val_writer=None):
             if dataset_name == 'PCN':
                 partial = data[0].cuda()
                 gt = data[1].cuda()
-                if config.dataset.train._base_.CARS:
+                if config.dataset.train._base_.CARS: # KITTI数据集进行训练时(CARS=TRUE)，需要在PCN的训练集点云进行随机裁剪，裁减的点再使用xyz坐标都等于0的3维数组填充，生成cars数据集，
                     if idx == 0:
                         print_log('padding while KITTI training', logger=logger)
+                    # 随机裁剪并填充，仅针对KITTI数据集，PCN数据集不需要此操作
                     partial = misc.random_dropping(partial, epoch) # specially for KITTI finetune
 
             elif dataset_name == 'ShapeNet':
                 gt = data.cuda()
+                # 这个生成的partial点云方法仅针对ShapeNet数据集，npoints=8192（即gt的点云数）
+                # [int(npoints * 1/4) , int(npoints * 3/4)]表示从gt中消除的点云数，则partial就来源于(8192-消除的点云数)fps下采样得到2048个点云
                 partial, _ = misc.seprate_point_cloud(gt, npoints, [int(npoints * 1/4) , int(npoints * 3/4)], fixed_points = None)
                 partial = partial.cuda()
             else:

@@ -136,7 +136,8 @@ def seprate_point_cloud(xyz, num_points, crop, fixed_points = None, padding_zero
 
     assert n == num_points
     assert c == 3
-    if crop == num_points:
+    # 这里crop即是论文中的 n
+    if crop == num_points: # 如果crop的数量和原始点云数量一样(8192)，直接返回
         return xyz, None
         
     INPUT = []

@@ -27,6 +27,7 @@ dataset : {
             others: {subset: 'test'}},
   test : { _base_: cfgs/dataset_configs/ShapeNet-34.yaml, 
             others: {subset: 'test'}}}
+# 这里需要注意num_pred表示预测的点云数量，即补全的点云数量，因为 ShapeNet系列的数据集的gt都是8192个点 
 model : {
   NAME: PoinTr, num_pred: 6144, num_query: 96, knn_layer: 1, trans_dim: 384}
 total_bs : 48
