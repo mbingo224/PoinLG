@@ -6,6 +6,8 @@ from timm.models.layers import DropPath,trunc_normal_
 from .dgcnn_group import DGCNN_Grouper
 
 from .CAEdgeFeature import SpareNetEncode,EdgeRes
+from .PCTencorder import Model
+
 
 
 from utils.logger import *
@@ -175,6 +177,7 @@ class DecoderBlock(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
+        # FFN 前馈神经网络
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
         self.knn_map = nn.Sequential(
@@ -194,12 +197,13 @@ class DecoderBlock(nn.Module):
     def forward(self, q, v, self_knn_index=None, cross_knn_index=None):
         # q = q + self.drop_path(self.self_attn(self.norm1(q)))
         norm_q = self.norm1(q) # 输出特征数为 384 的层归一化（获得batch_size个样本均值、方差），每个样本就能执行规范化，这样加速收敛速度
+        # 注意这里计算注意力的Q、K、V都是来自于输入
         q_1 = self.self_attn(norm_q) # norm_q.shape: [1, 224, 384]，计算有掩玛的多头自注意力（h = 6）
 
         # 如果查询集的本身自己 knn 近邻点索引存在，计算整合了输入的局部特征和全局特征的 knn_f
         # 在第一层将 knn_f 与计算了多头注意力的输入级联
         if self_knn_index is not None: 
-            knn_f = get_graph_feature(norm_q, self_knn_index)
+            knn_f = get_graph_feature(norm_q, self_knn_index) # knn_query
             knn_f = self.knn_map(knn_f)
             knn_f = knn_f.max(dim=1, keepdim=False)[0]
             q_1 = torch.cat([q_1, knn_f], dim=-1)
@@ -280,7 +284,7 @@ class Block(nn.Module):
         # 先LayerNorm->MLP->再作一个加深网络，因为还需要恢复原有输入分布，因此还需要将未作归一化之前的输入给加回来
         # 实际上这里才是残差操作，前面一步只是为了加深网络而已
         x = x + self.drop_path(self.mlp(self.norm2(x))) # layernorm1 的作用是加速训练，避免梯度消失导致模鞍点问题或过拟合
-        return x
+        return x # [bs, n, c] [1, 128, 384]
 
 
 
@@ -428,6 +432,8 @@ class PCTransformer(nn.Module):
             nn.ReLU(inplace=True), # 表示原地执行，表示新计算的结果将会覆盖原值，达到节约内存的效果
             nn.Linear(1024, 3 * num_query) # 在最后一层进行全连接（特征分类）
         )
+
+        # FFN前馈神经网络
         self.mlp_query = nn.Sequential(
             nn.Conv1d(1024 + 3, 1024, 1),
             # nn.BatchNorm1d(1024),
@@ -491,6 +497,11 @@ class PCTransformer(nn.Module):
         # build point proxy，inpc表示输入点云，形状为：B x N x C
         bs = inpc.size(0) # 查看第 0 维的大小，即 B：batch_size
 
+        #----------****实验10****----------
+        self.model = Model().to('cuda')
+        coor, x, global_feature, coarse_point_cloud = self.model(inpc.transpose(1,2).contiguous())
+        #----------****实验10****----------
+        '''
         # self.grouper = DGCNN_Grouper()，
         # 中心点坐标coor的shape:B x C(3) x N(128)，中心点特征 f 的shape：B x C(128) x N(128)
         # 特征 f 的通道 C 会得到提升
@@ -546,6 +557,7 @@ class PCTransformer(nn.Module):
         # cls_token = self.cls_pos.expand(bs, -1, -1)
         # x = torch.cat([cls_token, x], dim=1)
         # pos = torch.cat([cls_pos, pos], dim=1)
+        
         # encoder
         for i, blk in enumerate(self.encoder):
             if i < self.knn_layer: # 由于self.knn_layer = 1，因此只在Encoder 和 Decorder的第一层进行attention的注意力计算和中心点相对位置编码的整合，然后继续输入后续网络
@@ -558,19 +570,21 @@ class PCTransformer(nn.Module):
 
         # build the query feature for decoder
         # global_feature  = x[:, 0] # B C
-        
+        '''        
+
         # mlp[1024]:特征的映射
-        global_feature = self.increase_dim(x.transpose(1,2)) # 升维：B N(128) C(384)->B N 1024 -> B 1024 N（转置），线性投射升维
+        #global_feature = self.increase_dim(x.transpose(1,2)) # 升维：B N(128) C(384)-> B 384 N（转置）->B 1024 128，线性投射升维
         # 理论上最大池化虽然可以获得全局特征，但是会不可避免的导致局部细节特征的丢失
         #  max 对称操作使得输入点的顺序不会对模型预测产生影响，保证置换不变性的有效
         '''!!!!*****重要提示 1*****!!!!!!'''
         # ------******NOTE：对第2维：N维度 执行max pooling 获得 global feature, 128 点云中最大特征值的一个点******---------
-        global_feature = torch.max(global_feature, dim=-1)[0] # 在倒数一维进行最大池化 B 1024 128 -> B 1024(因为计算max的这一维会归0)
+        #global_feature = torch.max(global_feature, dim=-1)[0] # 在倒数一维进行最大池化 B 1024 128 -> B 1024(因为计算max的这一维会归0)
 
         '''!!!!*****重要提示 2*****!!!!!!'''
         #------***** NOTE：global feature[B, 1024] 通过 MLP(两层线性层) 实现从特征生成粗糙点云 *********----------
         # 位置特征，获得粗糙点云 [bs, 1024]-> [bs, 672] -> [bs, 224, 3] 相当于224个点云
-        coarse_point_cloud = self.coarse_pred(global_feature).reshape(bs, -1, 3)  #  B M C(3)
+        #coarse_point_cloud = self.coarse_pred(global_feature).reshape(bs, -1, 3)  #  B M C(3)
+
 
         # 获得粗糙点（查询集）本身的 knn 近邻点索引（ K = 8），用于Encorder 第一层几何感知
         new_knn_index = get_knn_index(coarse_point_cloud.transpose(1, 2).contiguous()) # 由于 transpose 操作会生成一份拷贝，因此 tensor 数据不是 transpose
@@ -585,12 +599,12 @@ class PCTransformer(nn.Module):
             coarse_point_cloud], dim=-1) # B M C+3 = B 224 1024+3，unsqueeze在指定维度位置插入维度为1，达到扩展维度的效果，扩展前后是共享底层数据
         # query_feature 经过 2 层 MLP 形成动态序列（Dynamic Queries）——Decorder 的输入
         # NOTE:这里mlp实际是用2层一维卷积来等效的，因此需要把 C 的维度给交换到第1维，因为如果是线性层的MLP，需要把 C 维放在第2维（最后面）
-        # [B, 224, 1027] -> [B, 1027, 224] -> [B, 384, 224]->[B, 224, 384]
+        # [B, 224, 1027] -> [B, 1027, 224] -> [B, 384, 224]->[B, 224, 384] 通道压缩增强模型的泛化能力
         q = self.mlp_query(query_feature.transpose(1,2)).transpose(1,2) # B M C 
-        # decoder
+        # decoder 计算Encoder 的输出序列和原始输入序列之间的局部特征
         for i, blk in enumerate(self.decoder):
             if i < self.knn_layer:
-                q = blk(q, x, new_knn_index, cross_knn_index)   # B M C，这里 x 是提供 encorder 的 N = 2 这一层的输入K、V，q 经过 masked 多头注意力计算之后作为输入Q
+                q = blk(q, x, new_knn_index, cross_knn_index)   # B M C，这里 x([bs, 128, 384]) 是作为 decorder 的 N = 2 这一层的输入K、V参与多头注意力计算，而 Q 是 q([bs, 224, 384]) 经过 masked 多头注意力计算之后作为输入Q
             else:
                 q = blk(q, x)
 
