@@ -210,6 +210,7 @@ class PCT_encoder(nn.Module):
         
         # maxpooling
         '''这里就是Feature extractor模块获得的特征编码shape code'''
+        # adaptive_max_pool1d是一种自适应的池化方式，可以根据输入的数据自动调整池化核的大小，对序列的长度不敏感，改变序列长度到1 也可以为其他长度
         x_g = F.adaptive_max_pool1d(x3, 1).view(batch_size, -1).unsqueeze(-1) # shape code: [bs, 512, 1]
         # NOTE：“逐点卷积层”：是一种“自我注意力机制”，即让每个通道都关注自己的信息，从而更好地捕捉特征之间的关系
         x = self.relu(self.ps_adj(x_g)) # [bs, 512, 1] 这里输出和输入的channel相同，使用1x1卷积的一维卷积
@@ -261,7 +262,7 @@ class Model(nn.Module):
         self.relu = nn.GELU()
         self.ps_adj = nn.Conv1d(384, 384, kernel_size=1)
 
-    def forward(self, x, gt=None, is_training=True):
+    def forward(self, x, num_query=224, gt=None, is_training=True):
         # feat_g 即是shape code(特征向量x_g):[bs, 512, 128], coarse 即是 fine(粗糙点云)：[bs, 3, 256], coor 即是 points(中心点坐标)：[bs, 3, 128]
         coor, feat_g, coarse = self.encoder(x)
         batch_size = coor.size(0)
@@ -271,14 +272,16 @@ class Model(nn.Module):
         feat_g = self.increase_dim(feat_g) # [bs, 1024, 128], 一维卷积是对第1维(通道)进行卷积，第2维(点数)不变
         feat_g = F.adaptive_max_pool1d(feat_g, 1).view(batch_size, -1)
         
+        #----------****实验11****----------
         '''
         NOTE: 这里的 new_x 与 PoinTr 中的 coarse_point_cloud 生成是同样的思路,不过是先求和再fps
         这里新生成的 new_x 即作为 seeds 
         '''
-        new_x = torch.cat([x,coarse],dim=2) # [bs, 3, 256 + 2048 = 2304]
-        new_x, _ = fps_downsample(new_x, new_x, 1024)
-        new_x, _ = fps_downsample(new_x, new_x, 224)
-        new_x = new_x.transpose(1, 2)
+        # new_x = torch.cat([x,coarse],dim=2) # [bs, 3, 256 + 2048 = 2304]
+        # new_x, _ = fps_downsample(new_x, new_x, 1024)
+        # new_x, _ = fps_downsample(new_x, new_x, num_query)
+        new_x = coarse.transpose(1, 2)
+        #----------****实验11****----------
         
         # coor(中心点坐标): [bs, 3, 128], feat_x(匹配原encorder的输出x): [bs, 128, 384], 
         # feat_g(针对提取的特征变换维度获取注意力计算所得局部和全局特征): [bs, 1024], new_x(粗糙点云): [bs, 224, 3]
