@@ -360,7 +360,9 @@ class PCTransformer(nn.Module):
             k = self.k
         )
 
-
+        #----------****实验11****----------
+        self.model = Model()
+        #----------****实验11****----------
 
 
         # 这里是获取position_embeding来恢复点云输入序列中的时序信息，这里采用的是一维卷积，因为Transformer就是专门用来处理文本这种一维数据
@@ -498,9 +500,14 @@ class PCTransformer(nn.Module):
         bs = inpc.size(0) # 查看第 0 维的大小，即 B：batch_size
 
         #----------****实验10****----------
-        self.model = Model().to('cuda')
-        coor, x, global_feature, coarse_point_cloud = self.model(inpc.transpose(1,2).contiguous())
+        # self.model = Model().to('cuda')
+        # coor, x, global_feature, coarse_point_cloud = self.model(inpc.transpose(1,2).contiguous())
         #----------****实验10****----------
+        
+        #----------****实验11****----------
+        coor, x, global_feature, coarse_point_cloud = self.model(inpc.transpose(1,2).contiguous(), self.num_query)
+        #----------****实验11****----------
+        
         '''
         # self.grouper = DGCNN_Grouper()，
         # 中心点坐标coor的shape:B x C(3) x N(128)，中心点特征 f 的shape：B x C(128) x N(128)
