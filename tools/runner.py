@@ -73,7 +73,7 @@ def run_net(args, config, train_writer=None, val_writer=None):
         num_iter = 0
 
         base_model.train()  # set model to training mode
-        n_batches = len(train_dataloader)
+        n_batches = len(train_dataloader) # 训练集的总样本数除以batch_size，即训练集的总batch数
         for idx, (taxonomy_ids, model_ids, data) in enumerate(train_dataloader):
             data_time.update(time.time() - batch_start_time)
             npoints = config.dataset.train._base_.N_POINTS

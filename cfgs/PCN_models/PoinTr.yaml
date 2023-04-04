@@ -1,7 +1,8 @@
 optimizer : {
   type: AdamW,
   kwargs: {
-  lr : 0.0005, 
+  #lr : 0.0005,
+  lr : 0.0001,
   weight_decay : 0.0005
 }}
 
@@ -9,7 +10,8 @@ scheduler: {
   type: LambdaLR,
   kwargs: {
   decay_step: 21,
-  lr_decay: 0.9,
+  #lr_decay: 0.9,
+  lr_decay: 0.7,
   lowest_decay: 0.02  # min lr = lowest_decay * lr
 }}
 
@@ -29,11 +31,18 @@ dataset : {
             others: {subset: 'test'}},
   test : { _base_: cfgs/dataset_configs/PCN.yaml, 
             others: {subset: 'test'}}}
+# num_query超参数用于调整粗糙点云 coarse_point_cloud 的数量以及构建的 2D grid 的边长，因为step = int(pow(self.num_pred//self.num_query, 0.5) + 0.5)
+# 因此step 由预测的缺失点云数量num_pred和粗糙点云数量num_query共同决定
+# trans_dim 表示隐藏层(嵌入层，可理解为词向量的维度)的维度，来区分序列中不同位置的信息，同时可决定自注意力和FFN的复杂度
+# 理论上该维度越大，词向量的维度越高，特征越多能够更准确的将词与词区分，维度太高会淡化词之间的关系，但是维度太低了又不能将词区分
+# 更多信息参考：https://vb72iistdr.feishu.cn/docx/YlIZdzWb6oel6xxScYHcbHHHnpv#QcG6dAey8ows4uxQ3Dwcz0mYnUh
+# 在Encoder中，输出向量的维度通常是序列长度×隐藏层维度。
+# 而在Decoder中，输出向量的维度通常是序列长度×隐藏层维度，但还要乘以一个注意力头数，以便在多头自注意力计算中使用。
 model : {
   NAME: PoinTr, num_pred: 14336, num_query: 256, knn_layer: 1, trans_dim: 384}
   
 total_bs : 44
 step_per_update : 1
-max_epoch : 300
+max_epoch : 400
 
 consider_metric: CDL1

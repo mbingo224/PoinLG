@@ -230,9 +230,9 @@ class PCT_encoder(nn.Module):
         x2_d = (self.sa2_d(x1_d, x1_d)).reshape(batch_size,self.channel*4,N//8) # [bs, 512, 128]->[bs, 256, 256]
 
         # 这里使用的是一维卷积形式的MLP来生成粗糙点云fine，不同于其他网络使用Liner的MLP，可比对Transformeer.py
-        fine = self.conv_out(self.relu(self.conv_out1(x2_d))) # [bs, 3, 256]
+        coarse = self.conv_out(self.relu(self.conv_out1(x2_d))) # [bs, 3, 256]
 
-        return points, x3, fine # points: [bs, 3, 128] 形状编码x3: [bs, 512, 128] 粗糙点云fine: [bs, 3, 256]
+        return points, x3, coarse # points: [bs, 3, 128] 形状编码x3: [bs, 512, 128] 粗糙点云fine: [bs, 3, 256]
 
 class Model(nn.Module):
     # def __init__(self, args):
