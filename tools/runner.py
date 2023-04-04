@@ -101,10 +101,10 @@ def run_net(args, config, train_writer=None, val_writer=None):
             ret = base_model(partial)
             #----------****实验12****----------
             # 这里是调用PoinTr的get_loss方法，计算sparse_loss和dense_loss，而且计算的是L1距离
-            sparse_loss, fine_2048_loss, dense_loss = base_model.module.get_loss(ret, gt)
+            sparse_loss, dense_loss = base_model.module.get_loss(ret, gt)
 
             #_loss = sparse_loss + dense_loss
-            _loss = sparse_loss + fine_2048_loss + dense_loss
+            _loss = sparse_loss + dense_loss
             #----------****实验12****---------- 
             _loss.backward()
 

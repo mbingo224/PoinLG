@@ -92,6 +92,11 @@ class PoinTr(nn.Module):
             nn.Conv1d(1024, 1024, 1)
         )
         self.reduce_map = nn.Linear(self.trans_dim + 1027, self.trans_dim)
+        
+        #----------****实验13****----------
+        self.refine_coarse = nn.Linear(self.trans_dim, 3)
+        #----------****实验13****----------
+
         self.build_loss_func()
 
     def build_loss_func(self):
@@ -100,10 +105,10 @@ class PoinTr(nn.Module):
     def get_loss(self, ret, gt):
         loss_coarse = self.loss_func(ret[0], gt)
         #----------****实验12****----------
-        fine_2048 = self.loss_func(ret[1], gt)
+        # fine_2048 = self.loss_func(ret[1], gt)
         #----------****实验12****----------
-        loss_fine = self.loss_func(ret[2], gt)
-        return loss_coarse, fine_2048, loss_fine
+        loss_fine = self.loss_func(ret[1], gt)
+        return loss_coarse, loss_fine
 
     def forward(self, xyz):
         # 经过PCTransformer模块计算得到粗糙点云coarse_point_cloud（bs, 224, 3）和 decorder 输出的包含全局和局部特征的注意力predicted proxies: q（bs, 224, 384）
@@ -130,6 +135,11 @@ class PoinTr(nn.Module):
         # # NOTE: try to rebuild pc
         # coarse_point_cloud = self.refine_coarse(rebuild_feature).reshape(B, M, 3)
 
+        #----------****实验13****----------
+        coarse_point_cloud = self.refine_coarse(rebuild_feature).reshape(B, M, 3)
+        #----------****实验13****----------
+
+
         # NOTE: foldingNet
         # 将上述合并特征输入 FoldingNet 预测相对位置 [B*M, 384]->[B, M, 3, 64], 64 = step * step(step: 2D grid的边长)
         relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(224) 3 S(64)
@@ -137,7 +147,7 @@ class PoinTr(nn.Module):
         rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 2048, 3]
 
         #----------****实验12****----------
-        fine_2048 = rebuild_points
+        #fine_2048 = rebuild_points
         #----------****实验12****----------
 
         # NOTE: fc
@@ -153,9 +163,9 @@ class PoinTr(nn.Module):
         # rebuild_points：[1, 16384（2048+14336）, 3]，原始点云与细化后重构的全部点云级联作为完整点云输出
         rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous() # 原始点云又引入一次
 
-        #----------****实验12****---------- 添加联合损失函数
-        # ret = (coarse_point_cloud, rebuild_points) # ([1, 448, 3]，[1, 16384, 3])        
-        ret = (coarse_point_cloud, fine_2048, rebuild_points) # ([1, 448, 3]，[1, 3, 2048]，[1, 16384, 3])
+        #----------****实验12****---------- 添加联合损失函数       
+        # ret = (coarse_point_cloud, fine_2048, rebuild_points) # ([1, 448, 3]，[1, 3, 2048]，[1, 16384, 3])
         #----------****实验12****----------
+        ret = (coarse_point_cloud, rebuild_points) # ([1, 448, 3]，[1, 16384, 3]) 
         return ret
 
