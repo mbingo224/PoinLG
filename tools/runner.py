@@ -99,10 +99,13 @@ def run_net(args, config, train_writer=None, val_writer=None):
             num_iter += 1
            
             ret = base_model(partial)
-            
-            sparse_loss, dense_loss = base_model.module.get_loss(ret, gt)
-         
-            _loss = sparse_loss + dense_loss 
+            #----------****实验12****----------
+            # 这里是调用PoinTr的get_loss方法，计算sparse_loss和dense_loss，而且计算的是L1距离
+            sparse_loss, fine_2048_loss, dense_loss = base_model.module.get_loss(ret, gt)
+
+            #_loss = sparse_loss + dense_loss
+            _loss = sparse_loss + fine_2048_loss + dense_loss
+            #----------****实验12****---------- 
             _loss.backward()
 
             # forward
@@ -151,7 +154,7 @@ def run_net(args, config, train_writer=None, val_writer=None):
             # Validate the current model
             metrics = validate(base_model, test_dataloader, epoch, ChamferDisL1, ChamferDisL2, val_writer, args, config, logger=logger)
 
-            # Save ckeckpoints
+            # Save ckeckpoints best_metrics是判断是否获得了最好的模型的评价指标，对于 PCN 数据集是 ChamferDisL1，对于ShapeNet系列数据集是 ChamferDisL2
             if  metrics.better_than(best_metrics):
                 best_metrics = metrics
                 builder.save_checkpoint(base_model, optimizer, epoch, metrics, best_metrics, 'ckpt-best', args, logger = logger)

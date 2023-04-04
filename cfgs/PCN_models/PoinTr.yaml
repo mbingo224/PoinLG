@@ -41,8 +41,9 @@ dataset : {
 model : {
   NAME: PoinTr, num_pred: 14336, num_query: 256, knn_layer: 1, trans_dim: 384}
   
-total_bs : 44
+total_bs : 42
 step_per_update : 1
-max_epoch : 400
+max_epoch : 300
 
+# 评价最佳模型的指标
 consider_metric: CDL1
