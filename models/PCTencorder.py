@@ -280,11 +280,17 @@ class Model(nn.Module):
         # new_x = torch.cat([x,coarse],dim=2) # [bs, 3, 256 + 2048 = 2304]
         # new_x, _ = fps_downsample(new_x, new_x, 1024)
         # new_x, _ = fps_downsample(new_x, new_x, num_query)
-        new_x = coarse.transpose(1, 2)
+        # new_x = coarse.transpose(1, 2)
         #----------****实验11****----------
+
+        #----------****实验14****----------
+        new_x, _ = fps_downsample(x, x, 128)
+        new_x = torch.cat([new_x,coarse],dim=2)
+        new_x = new_x.transpose(1, 2)
+        #----------****实验14****----------
         
-        # coor(中心点坐标): [bs, 3, 128], feat_x(匹配原encorder的输出x): [bs, 128, 384], 
-        # feat_g(针对提取的特征变换维度获取注意力计算所得局部和全局特征): [bs, 1024], new_x(粗糙点云): [bs, 224, 3]
+        # coor(中心点坐标): [bs, 3, 128], feat_x(匹配原encorder的输出x): [bs, 128, trans_dim], 
+        # feat_g(针对提取的特征变换维度获取注意力计算所得局部和全局特征): [bs, 1024], new_x(粗糙点云): [bs, num_query, 3]
         return coor, feat_x, feat_g, new_x 
 
         '''
