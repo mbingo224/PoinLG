@@ -156,8 +156,8 @@ class PCT_encoder(nn.Module):
         self.conv_out = nn.Conv1d(64, 3, kernel_size=1)
         self.conv_out1 = nn.Conv1d(channel*4, 64, kernel_size=1)
         #----------****实验15****----------#
-        self.conv_out = nn.Conv1d(64, 3, kernel_size=1)
-        self.conv_out1 = nn.Conv1d(channel*2, 64, kernel_size=1)
+        # self.conv_out = nn.Conv1d(64, 3, kernel_size=1)
+        # self.conv_out1 = nn.Conv1d(channel*2, 64, kernel_size=1)
         #----------****实验15****----------#
         self.ps = nn.ConvTranspose1d(channel*8, channel, 128, bias=True)
         self.ps_refuse = nn.Conv1d(channel, channel*8, kernel_size=1)
@@ -231,12 +231,12 @@ class PCT_encoder(nn.Module):
         ***IDEA: 由于GDP和SFA模块已经聚合了全局和局部特征, 因此可以在这里通过reshape可以直接变换
         得到Transformer中的decorder的 q [bs, 224, 384], 即作为 x_g 输出, 如果这样就需要调整x_g2的下采样率, 由128改为168
         '''
-        #x2_d = (self.sa2_d(x1_d, x1_d)).reshape(batch_size,self.channel*4,N//8) # [bs, 512, 128]->[bs, 256, 256]
+        x2_d = (self.sa2_d(x1_d, x1_d)).reshape(batch_size,self.channel*4,N//8) # [bs, 512, 128]->[bs, 256, 256]
 
         #----------****实验15****----------#
-        x2_d = (self.sa2_d(x1_d, x1_d)).reshape(batch_size, 128, 512) # [bs, 512, 128]->[bs, 256, 256]
+        #x2_d = (self.sa2_d(x1_d, x1_d)).reshape(batch_size, 128, 512) # [bs, 512, 128]->[bs, 256, 256]
         
-        coarse = self.conv_out(self.relu(self.conv_out1(x2_d))) # [bs, 3, 512]
+        #coarse = self.conv_out(self.relu(self.conv_out1(x2_d))) # [bs, 3, 512]
         
         #----------****实验15****----------#
 
@@ -304,11 +304,17 @@ class Model(nn.Module):
         # new_x = torch.cat([new_x,coarse],dim=2)
         # new_x = new_x.transpose(1, 2)
         #----------****实验14****----------
+
         #----------****实验15****----------
-        new_x = coarse.transpose(1, 2)
+        #new_x = coarse.transpose(1, 2)
         #----------****实验15****----------
 
-        
+        #----------****实验16****----------
+        new_x, _ = fps_downsample(coarse, coarse, num_query)
+        new_x = new_x.transpose(1, 2)
+        #----------****实验16****----------
+
+        # new_x = coarse.transpose(1, 2)
         # coor(中心点坐标): [bs, 3, 128], feat_x(匹配原encorder的输出x): [bs, 128, trans_dim], 
         # feat_g(针对提取的特征变换维度获取注意力计算所得局部和全局特征): [bs, 1024], new_x(粗糙点云): [bs, num_query, 3]
         return coor, feat_x, feat_g, new_x 
