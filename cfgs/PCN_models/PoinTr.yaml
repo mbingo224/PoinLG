@@ -1,8 +1,8 @@
 optimizer : {
   type: AdamW,
   kwargs: {
-  lr : 0.0005,
-  #lr : 0.0001,
+  #lr : 0.0005,
+  lr : 0.0002,
   weight_decay : 0.0005
 }}
 
