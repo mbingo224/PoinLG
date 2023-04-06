@@ -144,7 +144,9 @@ class PoinTr(nn.Module):
         # 将上述合并特征输入 FoldingNet 预测相对位置 [B*M, 384]->[B, M, 3, 64], 64 = step * step(step: 2D grid的边长)
         relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(224) 3 S(64)
         # rebuild_points：[1, 14336, 3]，变成绝对位置rebuild_points，又再一次整合了粗糙点云输入，补充特征
-        rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 2048, 3]
+        # coarse_point_cloud：[1, 224, 3]-> [1, 224, 3, 1]
+        # [1, M(224), 3, 1] + [1, M, 3, 64] = [1, 224, 3, 64]
+        rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 14336, 3]
 
         #----------****实验12****----------
         #fine_2048 = rebuild_points
