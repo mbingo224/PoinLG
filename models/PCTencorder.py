@@ -310,9 +310,13 @@ class Model(nn.Module):
         #----------****实验15****----------
 
         #----------****实验16****----------
-        new_x, _ = fps_downsample(coarse, coarse, num_query)
-        new_x = new_x.transpose(1, 2)
+        # new_x, _ = fps_downsample(coarse, coarse, num_query)
+        # new_x = new_x.transpose(1, 2)
         #----------****实验16****----------
+
+        #----------****实验17****----------
+        new_x = coarse.transpose(1, 2)
+        #----------****实验17****----------
 
         # new_x = coarse.transpose(1, 2)
         # coor(中心点坐标): [bs, 3, 128], feat_x(匹配原encorder的输出x): [bs, 128, trans_dim], 
