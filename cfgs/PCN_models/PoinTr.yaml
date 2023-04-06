@@ -1,8 +1,8 @@
 optimizer : {
   type: AdamW,
   kwargs: {
-  lr : 0.0005,
-  #lr : 0.0001,
+  #lr : 0.0005,
+  lr : 0.0001,
   weight_decay : 0.0005
 }}
 
@@ -10,8 +10,8 @@ scheduler: {
   type: LambdaLR,
   kwargs: {
   decay_step: 21,
-  lr_decay: 0.9,
-  #lr_decay: 0.7,
+  #lr_decay: 0.9,
+  lr_decay: 0.7,
   lowest_decay: 0.02  # min lr = lowest_decay * lr
 }}
 
