@@ -92,6 +92,7 @@ class PoinTr(nn.Module):
             nn.Conv1d(1024, 1024, 1)
         )
         self.reduce_map = nn.Linear(self.trans_dim + 1027, self.trans_dim)
+        self.refine_coarse = nn.Linear(self.trans_dim, 3)
         self.build_loss_func()
 
     def build_loss_func(self):
@@ -127,8 +128,9 @@ class PoinTr(nn.Module):
 
         # [B, M, 1411]->[B, M, 384]
         rebuild_feature = self.reduce_map(rebuild_feature.reshape(B*M, -1)) # BM C(384), 形成 m x 384 降低维数的全连接映射
-        # # NOTE: try to rebuild pc
-        # coarse_point_cloud = self.refine_coarse(rebuild_feature).reshape(B, M, 3)
+        # NOTE: try to rebuild pc
+        coarse_point_cloud = self.refine_coarse(rebuild_feature).reshape(B, M, 3)
+        
 
         # NOTE: foldingNet
         # 将上述合并特征输入 FoldingNet 预测相对位置 [B*M, 384]->[B, M, 3, 64], 64 = step * step(step: 2D grid的边长)
