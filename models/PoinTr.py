@@ -27,6 +27,7 @@ class Fold(nn.Module):
         self.folding_seed = torch.cat([a, b], dim=0).cuda() # [2, 64]
 
         # 这里是 1st folding 与 2nd folding 模块的设计，对比原网络的FoldingLayer来分析，和原网络的self.layers是等效的
+        # 但是原网络的FoldLayer的hiden_dim是[512, 512, 3]，这里的hidden_dim是[512, 256, 3]
         self.folding1 = nn.Sequential(
             nn.Conv1d(in_channel + 2, hidden_dim, 1),
             nn.BatchNorm1d(hidden_dim),
@@ -53,11 +54,11 @@ class Fold(nn.Module):
         bs = x.size(0) # B*M
         # in_channel = 384，[B*M, 384, 1]->[bs, 384, 64]
         features = x.view(bs, self.in_channel, 1).expand(bs, self.in_channel, num_sample)
-        # [2, 64]->[1, 2, 64]->[bs, 2, 64]，这里的self.folding_seed 即是 foldingnet 的 self.grid
+        # [2, 64]->[1, 2, 64]->[bs, 2, 64(m)]，这里的self.folding_seed 即是 foldingnet 的 self.grid
         # 提升维度目的在于 batch size 一致，作为 seed 引导三维点云的还原生成
         seed = self.folding_seed.view(1, 2, num_sample).expand(bs, 2, num_sample).to(x.device) # 利用GPU加速计算
 
-        # 与FoldingNet 作为对比, 2D grid（[m, 2]，这里的 m 表示而为网格中 m 个像素点) 就是此处的self.folding_seed
+        # 与FoldingNet 作为对比, 2D grid（[2, m]，这里的 m 表示而为网格中 m 个像素点) 就是此处的self.folding_seed：[2, 64]
         # 在此处，m 被假定为 64(m = step x step)，由 512(C)调整为 384，这是因为Transformer 的 decorder 所生成而来的，可查阅下述PointTr 的 forward 函数
         # 将seed 和 features 级联以后活动的特征x([bs, 384+2, 64])
         # 这里引入 2D grid 就是 foldingnet 将 384+2 高维度的点云特征投射回三维
@@ -83,6 +84,7 @@ class PoinTr(nn.Module):
         self.fold_step = int(pow(self.num_pred//self.num_query, 0.5) + 0.5) # 14336 // 224 = 64, 加 0.5 实现四舍五入，可以用round函数来代替，注意观察这里的depth，理论上Transformer的encorder和decorder均是6层，因此这里解码层改变为8层是否会对解码有促进作用，待验证
         self.base_model = PCTransformer(in_chans = 3, embed_dim = self.trans_dim, depth = [6, 8], drop_rate = 0., num_query = self.num_query, knn_layer = self.knn_layer)
         
+        ''' 此处的hiden_dim 可作为一个超参数 用于调整FoldingNet的隐藏层维度'''
         self.foldingnet = Fold(self.trans_dim, step = self.fold_step, hidden_dim = 256)  # rebuild a cluster point
 
         self.increase_dim = nn.Sequential(
@@ -130,9 +132,11 @@ class PoinTr(nn.Module):
             q,
             coarse_point_cloud], dim=-1)  # B M(224) 1027+C=1411
 
-        # [B, M, 1411]->[B, M, 384]
-        rebuild_feature = self.reduce_map(rebuild_feature.reshape(B*M, -1)) # BM C(384), 形成 m x 384 降低维数的全连接映射
+        # [B, M, 1411]->[B, M, 384] 
+        # 这里对于输入到foldingnet只是提供了特征通道，缺少的 m 是在foldingnet中通过 2D grid 的边长的平方来确定
         # # NOTE: try to rebuild pc
+        rebuild_feature = self.reduce_map(rebuild_feature.reshape(B*M, -1)) # BM C(384)
+        # NOTE: try to rebuild pc
         # coarse_point_cloud = self.refine_coarse(rebuild_feature).reshape(B, M, 3)
 
         #----------****实验13****----------
@@ -141,7 +145,7 @@ class PoinTr(nn.Module):
 
 
         # NOTE: foldingNet
-        # 将上述合并特征输入 FoldingNet 预测相对位置 [B*M, 384]->[B, M, 3, 64], 64 = step * step(step: 2D grid的边长)
+        # 将上述合并特征输入 FoldingNet 预测相对位置 [B*M, 384]->[B, M, 3, 64(m)], 64 = step * step(step: 2D grid的边长)
         relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(224) 3 S(64)
         # rebuild_points：[1, 14336, 3]，变成绝对位置rebuild_points，又再一次整合了粗糙点云输入，补充特征
         # coarse_point_cloud：[1, 224, 3]-> [1, 224, 3, 1]

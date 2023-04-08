@@ -364,7 +364,7 @@ class EdgeConvResFeat(nn.Module):
             x = get_graph_feature(x1, k=self.k) # [bs, 256, num_points, k]
             x = self.relu2(self.bn2(self.conv2(x))) # [bs, 128, num_points, k]
             x2 = x.max(dim=-1, keepdim=False)[0] # [bs, 128, num_points]
-            x2 = x2 + x2_res # [bs, 128, num_points] 加上 x1 经过一维卷积，增加非线性度同时获得点云中感兴趣的特征
+            x2 = x2 + x2_res # [bs, 128, num_points] 加上 x2 经过一维卷积 MLP 的特征 F_3，增加非线性度同时获得点云中感兴趣的特征
 
             x3_res = self.resconv2(x2)
             x = get_graph_feature(x2, k=self.k) # [bs, 256, num_points, k]
@@ -678,7 +678,7 @@ class EdgeRes(nn.Module):
 class SELayer(nn.Module):
     """
     input:
-        x:(b, c, m, n)
+        x:(b, c, m, n) 其中 m=num_points n=k(邻近点的数量)
 
     output:
         out:(b, c, m', n')
@@ -696,9 +696,12 @@ class SELayer(nn.Module):
 
     def forward(self, x):
         b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
+        y = self.avg_pool(x).view(b, c) # (b, c, 1, 1)->(b, c) NOTE：这里使用的是二维全局平均池化，而不是一维平均池化
         y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x) # 这里是计算 η 可校准获得edge feature y（促进较好的局部特征的生成），SELayer计算所得的F_2需要和原输入x相乘，可结合CAE图示理解
+        # 这里是计算 η 可校准获得edge feature y（促进较好的局部特征的生成），
+        # SELayer计算所得的F_2需要和原输入x相乘，可结合CAE图示理解
+        '''IDEA: 将 x 经过最大池化后再拓展(expand_as)到初始4个维度并赋上一个参数权重 u, 然后给 y 一个参数权重 v, 最后将 x 和 y 相乘得到最终的特征图 F_2'''
+        return x * y.expand_as(x) # 将张量 y 扩展为和参数 x 一样的大小，这里的矩阵相乘是对应元素相乘（标量相乘），而不是二维矩阵相乘
 
 class SELayer1D(nn.Module):
     """
