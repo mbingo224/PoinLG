@@ -212,7 +212,7 @@ class DecoderBlock(nn.Module):
         q = q + self.drop_path(q_1) # N = 1 残差，防止过拟合
 
         norm_q = self.norm_q(q) # 在计算 norm_q 与 norm_v的注意力前层归一化
-        norm_v = self.norm_v(v) # v 是来源于 encorder 的输出
+        norm_v = self.norm_v(v) # v 是来源于原始输入点云序列局部中心点
 
         # 这里一定要结合 transformer 的masked multi-head attention结构来理解，解码器比编码器中多了个encoder-cecoder attention。
         # 在encoder-decoder attention中，即N = 2 的注意力计算，Q 来自于解码器的上一个输出norm_q， K 和 V 则来自于与编码器的输出norm_v
