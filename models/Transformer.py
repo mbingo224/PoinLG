@@ -266,7 +266,7 @@ class Block(nn.Module):
         x_1 = self.attn(norm_x) # 计算多头自注意力，norm_x.shape:[1, 128, 384]
 
         if knn_index is not None: # 第一层 knn计算，即引入的另一个输入获得几何感知，相当于encorder的第一层有两个输入，一个是常规的q、k、v计算注意力
-            knn_f = get_graph_feature(norm_x, knn_index) # 聚合了相对位置(feature - x) 和 绝对位置x
+            knn_f = get_graph_feature(norm_x, knn_index) # [1, 8, 128, 768] 聚合了相对位置(feature - x) 和 绝对位置x
             knn_f = self.knn_map(knn_f) # mlp 线性映射后降维为 [1, 8, 128, 384]
             # 按维度dim 返回最大值，这里是返回每一行的最大值，输出的最大值和索引各是一个tensor，
             # torch.max()[0]: 只返回最大值，不返回索引，keepdim表示是否按照原输入的维度形式输出，默认False
