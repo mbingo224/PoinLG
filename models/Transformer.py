@@ -518,7 +518,7 @@ class PCTransformer(nn.Module):
         #----------****实验6****----------
 
         #----------****实验7****----------
-        coor, f = self.pre_encoder(inpc.transpose(1,2).contiguous())
+        #coor, f = self.pre_encoder(inpc.transpose(1,2).contiguous())
 
         #----------****实验7****----------
 
