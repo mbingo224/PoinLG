@@ -5,7 +5,6 @@ bash ./scripts/test.sh 0 \
     --exp_name Experiments_8_bs_48
 
 bash ./scripts/test.sh 1 \
-    --ckpts ./experiments/PoinTr/ShapeNet55_models/Experiments_8_bs_48/ckpt-best.pth \
-    --config ./cfgs/ShapeNet55_models/PoinTr.yaml \
-    --mode hard \
-    --exp_name Experiments_8_bs_48
+    --ckpts ./pretrained/PCNnew.pth \
+    --config ./cfgs/PCN_models/PCN.yaml \
+    --exp_name PCNnew
