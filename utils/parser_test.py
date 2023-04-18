@@ -16,7 +16,8 @@ def get_args():
         '--config', 
         type = str, 
         help = 'yaml config file',
-        default='./cfgs/PCN_models/PoinTr.yaml') 
+        #default='./cfgs/PCN_models/PoinTr.yaml'
+        default='./cfgs/ShapeNet55_models/PoinTr.yaml') 
     
     # choices=['none', 'pytorch']表示参数可以接受的值的范围，pytorch表示DDP的训练方式
     parser.add_argument(
@@ -41,13 +42,17 @@ def get_args():
     
     # some args
     # debug train or debug test，修改实验生成文件夹默认为'example'
-    parser.add_argument('--exp_name', type = str, default='example', help = 'experiment name') # debug test
+    # parser.add_argument('--exp_name', type = str, default='example', help = 'experiment name') # debug test
+    # ShapeNet55
+    parser.add_argument('--exp_name', type = str, default='Experiments_8_bs_38', help = 'experiment name') # debug test
     
     # 当想要仅微调某个已训练的模型，就可使用--start_ckpts参数来指定该模型的权重文件（包含了 model_state_dict 和 optimizer_state_dict ）以在其上继续训练
     parser.add_argument('--start_ckpts', type = str, default=None, help = 'reload used ckpt path') 
     
     # debug test
-    parser.add_argument('--ckpts', type = str, default='./pretrained/concat_graph_feature_fail_best.pth', help = 'test used ckpt path') # debug test
+    #parser.add_argument('--ckpts', type = str, default='./pretrained/concat_graph_feature_fail_best.pth', help = 'test used ckpt path') # debug test
+    # ShapeNet55
+    parser.add_argument('--ckpts', type = str, default='./experiments/PoinTr/ShapeNet55_models/Experiments_8_bs_48/ckpt-best.pth', help = 'test used ckpt path') # debug test
     
     # debug train，训练时不需要预加载预训练模型
     #parser.add_argument('--ckpts', type = str, default=None, help = 'test used ckpt path')
@@ -60,8 +65,7 @@ def get_args():
         help = 'autoresume training (interrupted by accident)')
         
     # debug test，这里训练的时候理应把default值修改回 False，
-    # 实际上测试或者训练这个参数的设置都是在script的脚本下去进行设置的，可参考：PoinTr/scripts/test.sh
-    
+    # 实际上测试或者训练这个参数的设置都是在script的脚本下去进行设置的，可参考：PoinTr/scripts/test.sh 
     parser.add_argument(
         '--test', 
         action='store_true', 
@@ -75,10 +79,13 @@ def get_args():
         default=False, 
         help = 'test mode for certain ckpt')
     '''
+    # debug test
+    # ShapeNet55 easy模式
     parser.add_argument(
         '--mode', 
         choices=['easy', 'median', 'hard', None],
-        default=None,
+        #default=None,
+        default='easy',
         help = 'difficulty mode for shapenet')        
     args = parser.parse_args()
 
