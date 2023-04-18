@@ -228,8 +228,12 @@ def visualize_KITTI(path, data_list, titles = ['input','pred'], cmap=['bwr','aut
     pic_path = path + '.png'
     fig.savefig(pic_path)
 
-    np.save(os.path.join(path, 'input.npy'), data_list[0].numpy())
-    np.save(os.path.join(path, 'pred.npy'), data_list[1].numpy())
+    # np.save(os.path.join(path, 'input.npy'), data_list[0].numpy())
+    # np.save(os.path.join(path, 'pred.npy'), data_list[1].numpy())
+    ''' KITTI 可视化为txt文件'''
+    np.savetxt(os.path.join(path, 'input.txt'), data_list[0].numpy())
+    np.savetxt(os.path.join(path, 'pred.txt'), data_list[1].numpy())
+
     plt.close(fig)
 
 
