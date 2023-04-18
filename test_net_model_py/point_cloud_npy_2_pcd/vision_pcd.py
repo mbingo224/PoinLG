@@ -15,7 +15,8 @@ np.set_printoptions(suppress=True)
 import open3d as o3d
 import torch
 
-
+# 从张量中读取点云数据并存为npy文件
+'''
 coor = torch.randn(1, 3, 128)
 f = torch.randn(1, 128, 128)
 data_list = [coor, f]
@@ -25,7 +26,7 @@ f_file_path = os.path.join(current_path, 'test_net_model_py/point_cloud_npy_2_pc
 
 np.save(coor_file_path, data_list[0].numpy())
 np.save(f_file_path, data_list[1].numpy())
-
+'''
 
 # --------*****方法1：可视化并存储pcd点云********-----------
 # data = np.load(coor_file_path)
@@ -40,10 +41,26 @@ np.save(f_file_path, data_list[1].numpy())
 
 
 # --------*****方法2：可视化并存储pcd点云********-----------
-source_data = np.load(coor_file_path)[:,0:3].reshape(-1, 3)  #以(n,3)的形状读取点云
-point_cloud = o3d.geometry.PointCloud() # <class 'open3d.geometry.PointCloud'>是open3d中点云的标准类型
-point_cloud.points = o3d.utility.Vector3dVector(source_data) # 将形状 （n， 3） 的 float64 numpy 数组转换为 Open3D 格式的class，open3d.geometry.PointCloud()构造的class的属性points表示：open3d中一个形状为 (num_points, 3) 的 float64 数组，使用 numpy.asarray() 来访问数据
-o3d.visualization.draw_geometries([point_cloud]) # open3d 可视化
-corr_pcd_file = os.path.join(current_path, 'test_net_model_py/point_cloud_npy_2_pcd/coor.pcd')
-o3d.io.write_point_cloud(corr_pcd_file, point_cloud) # 存储为pcd格式
+# 从npy文件中读取点云数据，存储为pcd格式
+current_path = os.getcwd()
+input_file_path = '/home/zjin/Desktop/PoinTr/experiments/PoinTr/KITTI_models/test_Experiments_8_bs_38/vis_result/frame_2_car_2_1257/input.npy'
+pred_file_path = '/home/zjin/Desktop/PoinTr/experiments/PoinTr/KITTI_models/test_Experiments_8_bs_38/vis_result/frame_2_car_2_1257/pred.npy'
+
+source_data_input = np.load(input_file_path)[:,0:3].reshape(-1, 3)  #以(n,3)的形状读取点云
+point_cloud_input = o3d.geometry.PointCloud() # <class 'open3d.geometry.PointCloud'>是open3d中点云的标准类型
+point_cloud_input.points = o3d.utility.Vector3dVector(source_data_input) # 将形状 （n， 3） 的 float64 numpy 数组转换为 Open3D 格式的class，open3d.geometry.PointCloud()构造的class的属性points表示：open3d中一个形状为 (num_points, 3) 的 float64 数组，使用 numpy.asarray() 来访问数据
+
+source_data_pred = np.load(pred_file_path)[:,0:3].reshape(-1, 3)  #以(n,3)的形状读取点云
+point_cloud_pred = o3d.geometry.PointCloud() # <class 'open3d.geometry.PointCloud'>是open3d中点云的标准类型
+point_cloud_pred.points = o3d.utility.Vector3dVector(source_data_pred) # 将形状 （n， 3） 的 float64 numpy 数组转换为 Open3D 格式的class，open3d.geometry.PointCloud()构造的class的属性points表示：open3d中一个形状为 (num_points, 3) 的 float64 数组，使用 numpy.asarray() 来访问数据
+
+
+o3d.visualization.draw_geometries([point_cloud_input]) # open3d 可视化
+o3d.visualization.draw_geometries([point_cloud_pred]) # open3d 可视化
+
+input_pcd_file = os.path.join(current_path, 'test_net_model_py/point_cloud_npy_2_pcd/input.pcd')
+o3d.io.write_point_cloud(input_pcd_file, point_cloud_input) # 存储为pcd格式
+
+pred_pcd_file = os.path.join(current_path, 'test_net_model_py/point_cloud_npy_2_pcd/pred.pcd')
+o3d.io.write_point_cloud(pred_pcd_file, point_cloud_pred) # 存储为pcd格式
 
