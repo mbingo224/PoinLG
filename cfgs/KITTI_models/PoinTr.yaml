@@ -30,7 +30,7 @@ dataset : {
 
 model : {
   NAME: PoinTr, num_pred: 14336, num_query: 224, knn_layer: 1, trans_dim: 384} # trans_dim 指示点云序列执行pos embeding的维度，即词向量的维度，因为采样的是128个点，因此可以看出这里一个点用一个长度为3的向量来表示，这个可以看作是一个可以调整的参数来执行训练
-total_bs : 38
+total_bs : 34
 step_per_update : 1
 max_epoch : 600
 
