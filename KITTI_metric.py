@@ -7,6 +7,9 @@ import argparse
 from extensions.chamfer_dist import ChamferDistanceL2_split, ChamferDistanceL2
 import torch
 import numpy as np
+import time
+import time
+from utils.logger import *
 
 from tqdm import tqdm
 
@@ -21,7 +24,8 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--vis_path', 
-        type = str, 
+        type = str,
+        default='./experiments/PoinTr/KITTI_models/test_Finetune_Experiments_8_bs_38/vis_result' ,
         help = 'KITTI visualize path')
     args = parser.parse_args()
     return args
@@ -36,6 +40,8 @@ def get_Fidelity():
         pred_data = torch.from_numpy(np.load(os.path.join(Data_path, sample, 'pred.npy'))).unsqueeze(0).cuda()
         metric.append(criterion(input_data, pred_data)[0])
     print('Fidelity is %f' % (sum(metric)/len(metric)))
+    print_log('Fidelity is %f' % (sum(metric)/len(metric)), logger = logger)
+
 
 def get_Consistency():
     #Consistency
@@ -78,6 +84,7 @@ def get_Consistency():
         Consistency.append(MeanCD)
     MeanCD = sum(Consistency) / len(Consistency)
     print(f'Consistency is {MeanCD:.6f}')
+    print_log(f'Consistency is {MeanCD:.6f}', logger = logger)
 
 def get_MMD():
     criterion = ChamferDistanceL2(ignore_zeros=True)
@@ -96,7 +103,11 @@ def get_MMD():
         min_cd = min(batch_cd).item()
         metric.append(min_cd)
         print('This item %s CD %f, MMD %f' % (item, min_cd, sum(metric)*1.0 / len(metric) ))
+        print_log('This item %s CD %f, MMD %f' % (item, min_cd, sum(metric)*1.0 / len(metric) ), logger = logger)
+        
     print('MMD is %f' % (sum(metric)/len(metric)))
+    print_log('MMD is %f' % (sum(metric)/len(metric)), logger = logger)
+
 
 if __name__ == '__main__':
     args = get_args()
@@ -107,6 +118,24 @@ if __name__ == '__main__':
     Data_path = args.vis_path
     Samples = [item for item in os.listdir(Data_path) if os.path.isdir(Data_path + '/' + item)]
     criterion = ChamferDistanceL2_split(ignore_zeros=True)
+
+    parent_path = os.path.dirname(os.path.abspath(args.vis_path))
+    # logger，根据当地时间戳来命名日志文件
+    timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
+    # 对于PCN作为训练集，args.experiment_path = "./experiments/PoinTr/PCN_models/example"
+    log_file = os.path.join(parent_path, f'get_FD_MMD_{timestamp}.log') # 日志目录
+    #logger = get_root_logger(log_file=log_file, name='get_FD_MMD') # 配置根日志器及其子日志器的处理器、格式器，对于PCN数据集对应的配置文件中args.log_name一般是PoinTr
+    logger = get_logger(log_file=log_file, name='get_FD_MMD')
+    # 配置日志器,另一种配置方式
+    # logging.basicConfig(level=logging.INFO, handlers=[logging.FileHandler(os.path.join(log_dir, 'train_test_model_fun.log')),
+    #                                                   logging.StreamHandler(sys.stdout)],
+    #                     format='%(levelname)s - %(asctime)s - %(module)s - %(message)s',
+    #                     force=True)
+    # debug
+    # current_dir = os.getcwd()
+    # print("Current working directory:", current_dir)
+    # if not os.path.exists(Data_path):
+    #                 print("Data path does not exist!")
 
     get_Fidelity()
     get_MMD()
