@@ -315,6 +315,9 @@ class PointNetfeat(nn.Module):
         return x
 
 
+
+'''*****!!!!!重要提示: 这是对于之前特征提取模块的高维特征还原到 N X 3 的点云坐标，
+其实质与 MLP 加 maxpool 操作类似, 可以对比与EdgeRes类中点坐标还原对比!!!!!!***'''
 class PointNetRes(nn.Module):
     """
     input:
