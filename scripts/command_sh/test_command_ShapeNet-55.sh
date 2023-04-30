@@ -9,8 +9,8 @@ bash ./scripts/test.sh 1 \
     --config ./cfgs/PCN_models/PCN.yaml \
     --exp_name PCNnew
 
-bash ./scripts/test.sh 0 \
+bash ./scripts/test.sh 1 \
     --ckpts ./experiments/PoinTr/ShapeNet55_models/Experiments_8_bs_48/ckpt-best.pth \
     --config ./cfgs/ShapeNet55_models/PoinTr.yaml \
-    --mode easy \ 
-    --exp_name Experiments_8_bs_48
+    --mode hard \
+    --exp_name Best_Experiments_8_bs_48 
