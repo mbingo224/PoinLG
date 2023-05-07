@@ -150,15 +150,15 @@ def run_net(args, config, train_writer=None, val_writer=None):
             metrics = validate(base_model, test_dataloader, epoch, ChamferDisL1, ChamferDisL2, val_writer, args, config, logger=logger)
             
             # 按CDL2的大小保存模型
-            if 0.06 <= metrics._values[0] < 0.1:
+            if 0.131 <= metrics._values[0] < 0.135 and 2.65 <= metrics._values[-1] < 2.67:
                 print_log(f"Validation score is {metrics._values[-1]}, save model", logger = logger)
-                builder.save_checkpoint(base_model, optimizer, epoch, metrics, best_metrics, f'ckpt-epoch-{epoch:03d}-FoldingNet', args, logger = logger)
-            elif 0.11 <= metrics._values[0] < 0.14:
-                print_log(f"Validation score is {metrics._values[-1]}, save model", logger = logger)
-                builder.save_checkpoint(base_model, optimizer, epoch, metrics, best_metrics, f'ckpt-epoch-{epoch:03d}-TopNet', args, logger = logger)
-            elif 0.22 <= metrics._values[0] < 0.25:
-                print_log(f"Validation score is {metrics._values[-1]}, save model", logger = logger)
-                builder.save_checkpoint(base_model, optimizer, epoch, metrics, best_metrics, f'ckpt-epoch-{epoch:03d}-GRNet', args, logger = logger)
+                builder.save_checkpoint(base_model, optimizer, epoch, metrics, best_metrics, f'ckpt-epoch-{epoch:03d}-PCN', args, logger = logger)
+            # elif 0.11 <= metrics._values[0] < 0.14:
+            #     print_log(f"Validation score is {metrics._values[-1]}, save model", logger = logger)
+            #     builder.save_checkpoint(base_model, optimizer, epoch, metrics, best_metrics, f'ckpt-epoch-{epoch:03d}-TopNet', args, logger = logger)
+            # elif 0.22 <= metrics._values[0] < 0.25:
+            #     print_log(f"Validation score is {metrics._values[-1]}, save model", logger = logger)
+            #     builder.save_checkpoint(base_model, optimizer, epoch, metrics, best_metrics, f'ckpt-epoch-{epoch:03d}-GRNet', args, logger = logger)
             # elif 2.4 <= metrics._values[1] < 2.7:
             #     print_log(f"Validation score is {metrics._values[-1]}, save model", logger = logger)
             #     builder.save_checkpoint(base_model, optimizer, epoch, metrics, best_metrics, f'ckpt-epoch-{epoch:03d}-PCN', args, logger = logger)
