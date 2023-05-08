@@ -9,6 +9,8 @@ from utils.logger import *
 from utils.AverageMeter import AverageMeter
 from utils.metrics import Metrics
 from extensions.chamfer_dist import ChamferDistanceL1, ChamferDistanceL2
+from ptflops import get_model_complexity_info
+
 
 def run_net(args, config, train_writer=None, val_writer=None):
     logger = get_logger(args.log_name)
@@ -305,6 +307,7 @@ def test_net(args, config):
     if args.distributed:
         raise NotImplementedError()
 
+
     # Criterion，损失函数选取
     ChamferDisL1 = ChamferDistanceL1()
     ChamferDisL2 = ChamferDistanceL2()
@@ -331,6 +334,13 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
             if dataset_name == 'PCN':
                 partial = data[0].cuda() # e.g test时，输入为：1 x 2048 x 3
                 gt = data[1].cuda() # 让 gt 参与运算时在GPU上进行，例如损失计算，shape: 1 x 16384 x 3
+
+                # 计算FLOPS和吞吐量
+                # flops,params=get_model_complexity_info(base_model, (1,2048,3), as_strings=True, print_per_layer_stat=True,verbose=False)
+                # print(f"模型的FLOP为：{flops}")
+                # print(f"模型的参数数量为：{params}")
+                # print_log('模型的FLOP为:%s'%flops, logger=logger)
+                # print_log('模型的参数数量为:%s'%params, logger=logger)
 
                 ret = base_model(partial) # 跳转执行PoinTr的forward函数，返回粗糙点云和重建点云（精细点云）
                 coarse_points = ret[0] # [1, 448, 3]
