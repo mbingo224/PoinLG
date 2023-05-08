@@ -336,34 +336,34 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
                 gt = data[1].cuda() # 让 gt 参与运算时在GPU上进行，例如损失计算，shape: 1 x 16384 x 3
 
                 # 计算FLOPS和吞吐量
-                # flops,params=get_model_complexity_info(base_model, (1,2048,3), as_strings=True, print_per_layer_stat=True,verbose=False)
-                # print(f"模型的FLOP为：{flops}")
-                # print(f"模型的参数数量为：{params}")
-                # print_log('模型的FLOP为:%s'%flops, logger=logger)
-                # print_log('模型的参数数量为:%s'%params, logger=logger)
+                flops,params=get_model_complexity_info(base_model, (1,2048,3), as_strings=True, print_per_layer_stat=True,verbose=False)
+                print(f"模型的FLOP为：{flops}")
+                print(f"模型的参数数量为：{params}")
+                print_log('模型的FLOP为:%s'%flops, logger=logger)
+                print_log('模型的参数数量为:%s'%params, logger=logger)
 
-                ret = base_model(partial) # 跳转执行PoinTr的forward函数，返回粗糙点云和重建点云（精细点云）
-                coarse_points = ret[0] # [1, 448, 3]
-                dense_points = ret[1] # [1, 16384, 3]
+                # ret = base_model(partial) # 跳转执行PoinTr的forward函数，返回粗糙点云和重建点云（精细点云）
+                # coarse_points = ret[0] # [1, 448, 3]
+                # dense_points = ret[1] # [1, 16384, 3]
 
-                sparse_loss_l1 =  ChamferDisL1(coarse_points, gt)
-                sparse_loss_l2 =  ChamferDisL2(coarse_points, gt)
-                dense_loss_l1 =  ChamferDisL1(dense_points, gt)
-                dense_loss_l2 =  ChamferDisL2(dense_points, gt)
-                # 将计算所得的上述4个损失给添加进test_losses对象，每一个损失具体值存储在_val列表中
-                test_losses.update([sparse_loss_l1.item() * 1000, sparse_loss_l2.item() * 1000, dense_loss_l1.item() * 1000, dense_loss_l2.item() * 1000])
+                # sparse_loss_l1 =  ChamferDisL1(coarse_points, gt)
+                # sparse_loss_l2 =  ChamferDisL2(coarse_points, gt)
+                # dense_loss_l1 =  ChamferDisL1(dense_points, gt)
+                # dense_loss_l2 =  ChamferDisL2(dense_points, gt)
+                # # 将计算所得的上述4个损失给添加进test_losses对象，每一个损失具体值存储在_val列表中
+                # test_losses.update([sparse_loss_l1.item() * 1000, sparse_loss_l2.item() * 1000, dense_loss_l1.item() * 1000, dense_loss_l2.item() * 1000])
 
-                # 获得dense_points的['F1-score', 'CDL1', 'CDL2']的
-                # _val = [0.847459896658505, 6.5706041641533375, 0.13021875929553062]，直接调用的是类方法
-                _metrics = Metrics.get(dense_points ,gt) 
-                test_metrics.update(_metrics) # 将计算得到 ['F1-score', 'CDL1', 'CDL2'] 更新到评估矩阵test_metrics
+                # # 获得dense_points的['F1-score', 'CDL1', 'CDL2']的
+                # # _val = [0.847459896658505, 6.5706041641533375, 0.13021875929553062]，直接调用的是类方法
+                # _metrics = Metrics.get(dense_points ,gt) 
+                # test_metrics.update(_metrics) # 将计算得到 ['F1-score', 'CDL1', 'CDL2'] 更新到评估矩阵test_metrics
 
-                if taxonomy_id not in category_metrics: # 分类 taxonomy_id 不在字典category_metrics中，创建taxonomy_id对应的键值对
-                    # 构建了items=['F-Score', 'CDL1', 'CDL2'] 但_val= [0, 0, 0]的AverageMeter 对象
-                    category_metrics[taxonomy_id] = AverageMeter(Metrics.names()) 
-                # 将test计算所得的评估矩阵更新到每个点云图类别的评估矩阵，
-                # 一个taxonomy_id代表一个模型类别，如airplane
-                category_metrics[taxonomy_id].update(_metrics) 
+                # if taxonomy_id not in category_metrics: # 分类 taxonomy_id 不在字典category_metrics中，创建taxonomy_id对应的键值对
+                #     # 构建了items=['F-Score', 'CDL1', 'CDL2'] 但_val= [0, 0, 0]的AverageMeter 对象
+                #     category_metrics[taxonomy_id] = AverageMeter(Metrics.names()) 
+                # # 将test计算所得的评估矩阵更新到每个点云图类别的评估矩阵，
+                # # 一个taxonomy_id代表一个模型类别，如airplane
+                # category_metrics[taxonomy_id].update(_metrics) 
 
             elif dataset_name == 'ShapeNet':
                 gt = data.cuda()
