@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 import os
 import json
 from tools import builder
@@ -338,6 +339,23 @@ def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, 
                 ret = base_model(partial) # 跳转执行PoinTr的forward函数，返回粗糙点云和重建点云（精细点云）
                 coarse_points = ret[0] # [1, 448, 3]
                 dense_points = ret[1] # [1, 16384, 3]
+
+                if args.mode == 'easy':
+                    '''***---测试时，将 ShapeNet 测试样本的输入和预测点云转换为 txt 文件 '''
+                    target_path = os.path.join(args.experiment_path, 'vis_result')
+                    # 在args.experiment_path目录下构建test样本所生成的可视化评估目录vis_result
+                    if not os.path.exists(target_path):
+                        os.mkdir(target_path)
+                    # 将测试样本的模型id和索引idx拼接成文件名，如：frame_0_car_0_000
+                    #path = os.path.join(target_path, f'{model_id}_{idx:03d}')
+                    path = os.path.join(target_path, f'{taxonomy_id}_{model_id}_{idx:03d}')
+
+                    if not os.path.exists(path):
+                        os.makedirs(path)
+                    if (idx+1) % 5 == 0: # 每5个样本保存一次
+                        np.savetxt(os.path.join(path, 'input.txt'), partial[0].cpu().numpy())
+                        np.savetxt(os.path.join(path, 'pred.txt'), dense_points[0].cpu().numpy())
+                        np.savetxt(os.path.join(path, 'gt.txt'), gt[0].cpu().numpy())
 
                 sparse_loss_l1 =  ChamferDisL1(coarse_points, gt)
                 sparse_loss_l2 =  ChamferDisL2(coarse_points, gt)
