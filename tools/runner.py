@@ -306,27 +306,68 @@ def test_net(args, config):
 
 def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, logger = None):
 
-    base_model.eval()  # set model to eval mode
+    base_model.eval()  # set model to eval mode，model.eval() 将 dropout 和 batch normalization 层设置为评估模式以使得推理一致
+    
+    # 计算FLOPS和吞吐量
+    # flops,params=get_model_complexity_info(base_model, (1,2048,3), as_strings=True, print_per_layer_stat=True,verbose=False)
+    
+    from thop import clever_format
+    from thop import profile
+    import time
+    from torchstat import stat
 
-    test_losses = AverageMeter(['SparseLossL1', 'SparseLossL2', 'DenseLossL1', 'DenseLossL2'])
-    test_metrics = AverageMeter(Metrics.names())
-    category_metrics = dict()
-    n_samples = len(test_dataloader) # bs is 1
+    # stat(base_model, (1, 2048, 3))
 
-    with torch.no_grad():
-        for idx, (taxonomy_ids, model_ids, data) in enumerate(test_dataloader):
-            taxonomy_id = taxonomy_ids[0] if isinstance(taxonomy_ids[0], str) else taxonomy_ids[0].item()
-            model_id = model_ids[0]
+    input = torch.randn(1, 2048, 3).to('cuda')
 
-            npoints = config.dataset.test._base_.N_POINTS
-            dataset_name = config.dataset.test._base_.NAME
-            if dataset_name == 'PCN':
-                partial = data[0].cuda()
-                gt = data[1].cuda()
+    
+    "*****---计算吞吐量----*****"
+    num_batches = 1200    # 总共执行的批次数
+    print_log(f'测试样本数: {num_batches:.2f} ', logger=logger)
 
-                ret = base_model(partial)
-                coarse_points = ret[0]
-                dense_points = ret[1]
+    total_samples = num_batches * 1    # 总共处理的样本数
+
+    start_time = time.time()    # 记录开始时间
+    for i in range(num_batches):
+        with torch.no_grad():
+            output_tensor = base_model(input)
+
+    elapsed_time = time.time() - start_time    # 计算总共耗时
+    throughput = total_samples / elapsed_time    # 计算吞吐量
+
+    print(f'Throughput: {throughput:.2f} samples/s')
+    print_log(f'吞吐量: {throughput:.2f} samples/s', logger=logger)
+
+    
+    flops, params = profile(base_model, inputs=(input, ))
+
+    print("FLOPs=", str(flops/1e9) +'{}'.format("G"))
+    print("params=", str(params/1e6)+'{}'.format("M"))
+    print(f"模型的FLOP为：{flops}")
+    print(f"模型的参数数量为：{params}")
+    print_log('模型的FLOP为:%s'%flops, logger=logger)
+    print_log('模型的参数数量为:%s'%params, logger=logger)
+    
+
+    # 分别构建稀疏、稠密点云的L1、L2 test loss
+    # test_losses = AverageMeter(['SparseLossL1', 'SparseLossL2', 'DenseLossL1', 'DenseLossL2'])
+    # test_metrics = AverageMeter(Metrics.names()) # 获得metrics评估列表中三个指标名F-Score、CDL1、CDL2
+    # category_metrics = dict()
+    # n_samples = len(test_dataloader) # bs is 1，采样的样本数，len(test_dataloader) = 总样本数 / batch_size
+
+    #with torch.no_grad(): # 测试不需要使用梯度，即不会自动构建计算图
+        # 将加载的dataset从idx = 0 开始索引出来taxonomy_ids, model_ids, data，这里data是一个(data['partial'], data['gt'])，包含有部分点云和完整点云的tensor
+        #for idx, (taxonomy_ids, model_ids, data) in enumerate(test_dataloader):  # 可查看对应的dataset类的__getitem__()函数来观察返回的
+            # taxonomy_id = taxonomy_ids[0] if isinstance(taxonomy_ids[0], str) else taxonomy_ids[0].item() # .item()用于在只包含一个元素的tensor中提取值，注意是只包含一个元素，否则的话使用.tolist()
+            # model_id = model_ids[0]
+
+            # npoints = config.dataset.test._base_.N_POINTS # e.g. 16384
+            #dataset_name = config.dataset.test._base_.NAME # e.g. KITTI
+            #if dataset_name == 'PCN':
+                # partial = data[0].cuda() # e.g test时，输入为：1 x 2048 x 3
+                # gt = data[1].cuda() # 让 gt 参与运算时在GPU上进行，例如损失计算，shape: 1 x 16384 x 3
+
+
 
                 if args.mode == 'easy':
                     '''***---测试时，将 ShapeNet 测试样本的输入和预测点云转换为 txt 文件 '''
