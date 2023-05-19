@@ -317,165 +317,43 @@ def test_net(args, config):
 def test(base_model, test_dataloader, ChamferDisL1, ChamferDisL2, args, config, logger = None):
 
     base_model.eval()  # set model to eval mode，model.eval() 将 dropout 和 batch normalization 层设置为评估模式以使得推理一致
-    # 分别构建稀疏、稠密点云的L1、L2 test loss
-    test_losses = AverageMeter(['SparseLossL1', 'SparseLossL2', 'DenseLossL1', 'DenseLossL2'])
-    test_metrics = AverageMeter(Metrics.names()) # 获得metrics评估列表中三个指标名F-Score、CDL1、CDL2
-    category_metrics = dict()
-    n_samples = len(test_dataloader) # bs is 1，采样的样本数，len(test_dataloader) = 总样本数 / batch_size
+    
+    # 计算FLOPS和吞吐量
+    # flops,params=get_model_complexity_info(base_model, (1,2048,3), as_strings=True, print_per_layer_stat=True,verbose=False)
+    
+    from thop import clever_format
+    from thop import profile
+    import time
+    from torchstat import stat
 
-    with torch.no_grad(): # 测试不需要使用梯度，即不会自动构建计算图
-        # 将加载的dataset从idx = 0 开始索引出来taxonomy_ids, model_ids, data，这里data是一个(data['partial'], data['gt'])，包含有部分点云和完整点云的tensor
-        for idx, (taxonomy_ids, model_ids, data) in enumerate(test_dataloader):  # 可查看对应的dataset类的__getitem__()函数来观察返回的
-            taxonomy_id = taxonomy_ids[0] if isinstance(taxonomy_ids[0], str) else taxonomy_ids[0].item() # .item()用于在只包含一个元素的tensor中提取值，注意是只包含一个元素，否则的话使用.tolist()
-            model_id = model_ids[0]
+    # stat(base_model, (1, 2048, 3))
 
-            npoints = config.dataset.test._base_.N_POINTS # e.g. 16384
-            dataset_name = config.dataset.test._base_.NAME # e.g. KITTI
-            if dataset_name == 'PCN':
-                partial = data[0].cuda() # e.g test时，输入为：1 x 2048 x 3
-                gt = data[1].cuda() # 让 gt 参与运算时在GPU上进行，例如损失计算，shape: 1 x 16384 x 3
+    input = torch.randn(1, 2048, 3).to('cuda')
 
-                # 计算FLOPS和吞吐量
-                # flops,params=get_model_complexity_info(base_model, (1,2048,3), as_strings=True, print_per_layer_stat=True,verbose=False)
-                
-                from thop import clever_format
-                from thop import profile
-                import time
-                #from torchstat import stat
+    
+    "*****---计算吞吐量----*****"
+    num_batches = 1200    # 总共执行的批次数
+    print_log(f'测试样本数: {num_batches:.2f} ', logger=logger)
 
-                # stat(base_model, (1, 2048, 3))
+    total_samples = num_batches * 1    # 总共处理的样本数
 
-                input = torch.randn(1, 2048, 3).to('cuda')
+    start_time = time.time()    # 记录开始时间
+    for i in range(num_batches):
+        with torch.no_grad():
+            output_tensor = base_model(input)
 
-                
+    elapsed_time = time.time() - start_time    # 计算总共耗时
+    throughput = total_samples / elapsed_time    # 计算吞吐量
 
-                # num_batches = 30    # 总共执行的批次数
-                # total_samples = num_batches * 1    # 总共处理的样本数
+    print(f'Throughput: {throughput:.2f} samples/s')
+    print_log(f'吞吐量: {throughput:.2f} samples/s', logger=logger)
 
-                # start_time = time.time()    # 记录开始时间
-                # for i in range(num_batches):
-                #     with torch.no_grad():
-                #         output_tensor = base_model(input)
+    
+    flops, params = profile(base_model, inputs=(input, ))
 
-                # elapsed_time = time.time() - start_time    # 计算总共耗时
-                # throughput = total_samples / elapsed_time    # 计算吞吐量
-
-                # print(f'Throughput: {throughput:.2f} samples/s')
-
-                
-                flops, params = profile(base_model, inputs=(input, ))
-
-                print("FLOPs=", str(flops/1e9) +'{}'.format("G"))
-                print("params=", str(params/1e6)+'{}'.format("M"))
-                print(f"模型的FLOP为：{flops}")
-                print(f"模型的参数数量为：{params}")
-                print_log('模型的FLOP为:%s'%flops, logger=logger)
-                print_log('模型的参数数量为:%s'%params, logger=logger)
-
-                # ret = base_model(partial) # 跳转执行PoinTr的forward函数，返回粗糙点云和重建点云（精细点云）
-                # coarse_points = ret[0] # [1, 448, 3]
-                # dense_points = ret[1] # [1, 16384, 3]
-
-                # sparse_loss_l1 =  ChamferDisL1(coarse_points, gt)
-                # sparse_loss_l2 =  ChamferDisL2(coarse_points, gt)
-                # dense_loss_l1 =  ChamferDisL1(dense_points, gt)
-                # dense_loss_l2 =  ChamferDisL2(dense_points, gt)
-                # # 将计算所得的上述4个损失给添加进test_losses对象，每一个损失具体值存储在_val列表中
-                # test_losses.update([sparse_loss_l1.item() * 1000, sparse_loss_l2.item() * 1000, dense_loss_l1.item() * 1000, dense_loss_l2.item() * 1000])
-
-                # # 获得dense_points的['F1-score', 'CDL1', 'CDL2']的
-                # # _val = [0.847459896658505, 6.5706041641533375, 0.13021875929553062]，直接调用的是类方法
-                # _metrics = Metrics.get(dense_points ,gt) 
-                # test_metrics.update(_metrics) # 将计算得到 ['F1-score', 'CDL1', 'CDL2'] 更新到评估矩阵test_metrics
-
-                if taxonomy_id not in category_metrics: # 分类 taxonomy_id 不在字典category_metrics中，创建taxonomy_id对应的键值对
-                    # 构建了items=['F-Score', 'CDL1', 'CDL2'] 但_val= [0, 0, 0]的AverageMeter 对象
-                    category_metrics[taxonomy_id] = AverageMeter(Metrics.names()) 
-                # 将test计算所得的评估矩阵更新到每个点云图类别的评估矩阵，
-                # 一个taxonomy_id代表一个模型类别，如airplane
-                category_metrics[taxonomy_id].update(_metrics) 
-
-            elif dataset_name == 'ShapeNet':
-                gt = data.cuda()
-                choice = [torch.Tensor([1,1,1]),torch.Tensor([1,1,-1]),torch.Tensor([1,-1,1]),torch.Tensor([-1,1,1]),
-                            torch.Tensor([-1,-1,1]),torch.Tensor([-1,1,-1]), torch.Tensor([1,-1,-1]),torch.Tensor([-1,-1,-1])]
-                num_crop = int(npoints * crop_ratio[args.mode])
-                for item in choice:           
-                    partial, _ = misc.seprate_point_cloud(gt, npoints, num_crop, fixed_points = item)
-                    # NOTE: subsample the input
-                    partial = misc.fps(partial, 2048)
-                    ret = base_model(partial)
-                    coarse_points = ret[0]
-                    dense_points = ret[1]
-
-                    sparse_loss_l1 =  ChamferDisL1(coarse_points, gt)
-                    sparse_loss_l2 =  ChamferDisL2(coarse_points, gt)
-                    dense_loss_l1 =  ChamferDisL1(dense_points, gt)
-                    dense_loss_l2 =  ChamferDisL2(dense_points, gt)
-
-                    test_losses.update([sparse_loss_l1.item() * 1000, sparse_loss_l2.item() * 1000, dense_loss_l1.item() * 1000, dense_loss_l2.item() * 1000])
-
-                    _metrics = Metrics.get(dense_points ,gt)
-
-                    # test_metrics.update(_metrics)
-
-                    if taxonomy_id not in category_metrics:
-                        category_metrics[taxonomy_id] = AverageMeter(Metrics.names())
-                    category_metrics[taxonomy_id].update(_metrics)
-            elif dataset_name == 'KITTI':
-                # 将data中的数据移动到GPU上
-                partial = data.cuda()
-                ret = base_model(partial)
-                dense_points = ret[1]
-                target_path = os.path.join(args.experiment_path, 'vis_result')
-                # 在args.experiment_path目录下构建test样本所生成的可视化评估目录vis_result
-                if not os.path.exists(target_path):
-                    os.mkdir(target_path)
-                # 将评估结果的可视化目录拼接出来并生成，并生成包含input.npy、pred.npy的frame_0_car_0_000和对应的frame_0_car_0_000.png图片
-                misc.visualize_KITTI(
-                    os.path.join(target_path, f'{model_id}_{idx:03d}'),
-                    [partial[0].cpu(), dense_points[0].cpu()]
-                )
-                continue
-            else:
-                raise NotImplementedError(f'Train phase do not support {dataset_name}')
-            # 每200个样本去打印一下sample的损失loss、metrics
-            if (idx+1) % 200 == 0:
-                print_log('Test[%d/%d] Taxonomy = %s Sample = %s Losses = %s Metrics = %s' %
-                            (idx + 1, n_samples, taxonomy_id, model_id, ['%.4f' % l for l in test_losses.val()], 
-                            ['%.4f' % m for m in _metrics]), logger=logger)
-        if dataset_name == 'KITTI':
-            return
-        for _,v in category_metrics.items(): # 字典中以列表返回可遍历的(键, 值) 元组数组
-            test_metrics.update(v.avg())
-        print_log('[TEST] Metrics = %s' % (['%.4f' % m for m in test_metrics.avg()]), logger=logger)
-
-     
-
-    # Print testing results
-    shapenet_dict = json.load(open('./data/shapenet_synset_dict.json', 'r'))
-    print_log('============================ TEST RESULTS ============================',logger=logger)
-    msg = ''
-    msg += 'Taxonomy\t'
-    msg += '#Sample\t'
-    for metric in test_metrics.items:
-        msg += metric + '\t'
-    msg += '#ModelName\t'
-    print_log(msg, logger=logger)
-
-
-    for taxonomy_id in category_metrics:
-        msg = ''
-        msg += (taxonomy_id + '\t')
-        msg += (str(category_metrics[taxonomy_id].count(0)) + '\t')
-        for value in category_metrics[taxonomy_id].avg():
-            msg += '%.3f \t' % value
-        msg += shapenet_dict[taxonomy_id] + '\t'
-        print_log(msg, logger=logger)
-
-    msg = ''
-    msg += 'Overall \t\t'
-    for value in test_metrics.avg():
-        msg += '%.3f \t' % value
-    print_log(msg, logger=logger)
-    return 
+    print("FLOPs=", str(flops/1e9) +'{}'.format("G"))
+    print("params=", str(params/1e6)+'{}'.format("M"))
+    print(f"模型的FLOP为：{flops}")
+    print(f"模型的参数数量为：{params}")
+    print_log('模型的FLOP为:%s'%flops, logger=logger)
+    print_log('模型的参数数量为:%s'%params, logger=logger) 
