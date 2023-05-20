@@ -84,8 +84,8 @@ class PoinTr(nn.Module):
         self.base_model = PCTransformer(in_chans = 3, embed_dim = self.trans_dim, depth = [6, 8], drop_rate = 0., num_query = self.num_query, knn_layer = self.knn_layer)
         
         #self.foldingnet = Fold(self.trans_dim, step = self.fold_step, hidden_dim = 256)  # rebuild a cluster point
-        self.foldingnet = Fold(self.trans_dim, step = 2, hidden_dim = 256)  # rebuild a cluster point
-        self.foldingnet_1 = Fold(self.trans_dim, step = 4, hidden_dim = 256)  # rebuild a cluster point
+        self.foldingnet = Fold(self.trans_dim, step = 4, hidden_dim = 256)  # rebuild a cluster point
+        self.foldingnet_1 = Fold(self.trans_dim, step = 2, hidden_dim = 256)  # rebuild a cluster point
         
 
         self.increase_dim = nn.Sequential(
@@ -152,13 +152,13 @@ class PoinTr(nn.Module):
 
         # NOTE: foldingNet第一次折叠
         # 将上述合并特征输入 FoldingNet 预测相对位置 [B*M, 384]->[B, M, 3, 64], 64 = step * step(step: 2D grid的边长)
-        relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(256) 3 S(4)
+        relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(256) 3 S(16)
         # rebuild_points：[1, 1024, 3]，变成绝对位置rebuild_points，又再一次整合了粗糙点云输入，补充特征
-        rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 1024, 3]
+        rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 4096, 3]
         
-        # 使用self.pos_embed的一维卷积来替代线性层，取得shape为[B, 1024, 384]的特征
-        rebuild_feature = self.pos_embed(rebuild_points.transpose(1,2)).transpose(1,2).reshape(B*1024, -1)
-        relative_xyz = self.foldingnet_1(rebuild_feature).reshape(B, 1024, 3, -1)    # B M(1024) 3 S(16)
+        # 使用self.pos_embed的一维卷积来替代线性层，取得shape为[B, 4096, 384]的特征
+        rebuild_feature = self.pos_embed(rebuild_points.transpose(1,2)).transpose(1,2).reshape(B*4096, -1)
+        relative_xyz = self.foldingnet_1(rebuild_feature).reshape(B, 4096, 3, -1)    # B M(4096) 3 S(4)
         # 这里是选择rebuild_points作为输入，而不是coarse_point_cloud，因为这里的rebuild_points是经过第一次折叠后的点云
         # 也可以选择将输入xyz下采样到1024个点，然后输入，但是这样做会丢失一些缺失点云结构信息，效果可能会变差，需要去实验验证
         rebuild_points = (relative_xyz + rebuild_points.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 16384, 3]
