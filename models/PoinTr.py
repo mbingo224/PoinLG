@@ -83,7 +83,10 @@ class PoinTr(nn.Module):
         self.fold_step = int(pow(self.num_pred//self.num_query, 0.5) + 0.5) # 14336 // 224 = 64, 加 0.5 实现四舍五入，可以用round函数来代替，注意观察这里的depth，理论上Transformer的encorder和decorder均是6层，因此这里解码层改变为8层是否会对解码有促进作用，待验证
         self.base_model = PCTransformer(in_chans = 3, embed_dim = self.trans_dim, depth = [6, 8], drop_rate = 0., num_query = self.num_query, knn_layer = self.knn_layer)
         
-        self.foldingnet = Fold(self.trans_dim, step = self.fold_step, hidden_dim = 256)  # rebuild a cluster point
+        #self.foldingnet = Fold(self.trans_dim, step = self.fold_step, hidden_dim = 256)  # rebuild a cluster point
+        self.foldingnet = Fold(self.trans_dim, step = 2, hidden_dim = 256)  # rebuild a cluster point
+        self.foldingnet_1 = Fold(self.trans_dim, step = 4, hidden_dim = 256)  # rebuild a cluster point
+        
 
         self.increase_dim = nn.Sequential(
             nn.Conv1d(self.trans_dim, 1024, 1),
@@ -92,6 +95,13 @@ class PoinTr(nn.Module):
             nn.Conv1d(1024, 1024, 1)
         )
         self.reduce_map = nn.Linear(self.trans_dim + 1027, self.trans_dim)
+
+        self.pos_embed = nn.Sequential(
+            nn.Conv1d(3, 128, 1), # NOTE: Conv1d 只对 B C N 三个维度中的 C 维度进行计算
+            nn.BatchNorm1d(128),
+            nn.LeakyReLU(negative_slope=0.2), # 这样负数时不会全部归置为0
+            nn.Conv1d(128, 384, 1) # 这里就是相当于MLP(全连接层)
+        )
         
         #----------****实验13****----------
         self.refine_coarse = nn.Linear(self.trans_dim, 3)
@@ -140,17 +150,25 @@ class PoinTr(nn.Module):
         #----------****实验13****----------
 
 
-        # NOTE: foldingNet
+        # NOTE: foldingNet第一次折叠
         # 将上述合并特征输入 FoldingNet 预测相对位置 [B*M, 384]->[B, M, 3, 64], 64 = step * step(step: 2D grid的边长)
-        relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(224) 3 S(64)
-        # rebuild_points：[1, 14336, 3]，变成绝对位置rebuild_points，又再一次整合了粗糙点云输入，补充特征
-        rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 2048, 3]
+        relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(256) 3 S(4)
+        # rebuild_points：[1, 1024, 3]，变成绝对位置rebuild_points，又再一次整合了粗糙点云输入，补充特征
+        rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 1024, 3]
+        
+        # 使用self.pos_embed的一维卷积来替代线性层，取得shape为[B, 1024, 384]的特征
+        rebuild_feature = self.pos_embed(rebuild_points.transpose(1,2)).transpose(1,2).reshape(B*1024, -1)
+        relative_xyz = self.foldingnet_1(rebuild_feature).reshape(B, 1024, 3, -1)    # B M(1024) 3 S(16)
+        # 这里是选择rebuild_points作为输入，而不是coarse_point_cloud，因为这里的rebuild_points是经过第一次折叠后的点云
+        # 也可以选择将输入xyz下采样到1024个点，然后输入，但是这样做会丢失一些缺失点云结构信息，效果可能会变差，需要去实验验证
+        rebuild_points = (relative_xyz + rebuild_points.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 16384, 3]
+
 
         #----------****实验12****----------
         #fine_2048 = rebuild_points
         #----------****实验12****----------
 
-        # NOTE: fc
+        # NOTE: fc，这里是构建了一个全连接层，将输入的特征维度降低到3，即预测的点的坐标，消融实验中用这一层替换，效果会变差
         # relative_xyz = self.refine(rebuild_feature)  # BM 3S
         # rebuild_points = (relative_xyz.reshape(B,M,3,-1) + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)
 
@@ -161,7 +179,7 @@ class PoinTr(nn.Module):
         # coarse_point_cloud：[1, 448, 3]，和预测中心点在点云数量维度上级联（224+224），有利于计算后续的 SparseLoss，有监督预测的粗糙点云
         coarse_point_cloud = torch.cat([coarse_point_cloud, inp_sparse], dim=1).contiguous()
         # rebuild_points：[1, 16384（2048+14336）, 3]，原始点云与细化后重构的全部点云级联作为完整点云输出
-        rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous() # 原始点云又引入一次
+        #rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous() # 原始点云又引入一次
 
         #----------****实验12****---------- 添加联合损失函数       
         # ret = (coarse_point_cloud, fine_2048, rebuild_points) # ([1, 448, 3]，[1, 3, 2048]，[1, 16384, 3])
