@@ -96,6 +96,7 @@ class PoinTr(nn.Module):
         )
         self.reduce_map = nn.Linear(self.trans_dim + 1027, self.trans_dim)
 
+        #----------****实验13_4****----------
         self.pos_embed = nn.Sequential(
             nn.Conv1d(3, 128, 1), # NOTE: Conv1d 只对 B C N 三个维度中的 C 维度进行计算
             nn.BatchNorm1d(128),
@@ -103,6 +104,12 @@ class PoinTr(nn.Module):
             nn.Conv1d(128, 384, 1) # 这里就是相当于MLP(全连接层)
         )
         
+        self.rebuild_map = nn.Sequential(
+            nn.Linear(3, self.trans_dim),
+            nn.LeakyReLU(negative_slope=0.2)
+        )
+        #----------****实验13_4****----------
+
         #----------****实验13****----------
         self.refine_coarse = nn.Linear(self.trans_dim, 3)
         #----------****实验13****----------
@@ -162,6 +169,7 @@ class PoinTr(nn.Module):
         # 这里是选择rebuild_points作为输入，而不是coarse_point_cloud，因为这里的rebuild_points是经过第一次折叠后的点云
         # 也可以选择将输入xyz下采样到1024个点，然后输入，但是这样做会丢失一些缺失点云结构信息，效果可能会变差，需要去实验验证
         rebuild_points = (relative_xyz + rebuild_points.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 16384, 3]
+        rebuild_points = fps(rebuild_points, 14336)
 
 
         #----------****实验12****----------
@@ -179,11 +187,11 @@ class PoinTr(nn.Module):
         # coarse_point_cloud：[1, 448, 3]，和预测中心点在点云数量维度上级联（224+224），有利于计算后续的 SparseLoss，有监督预测的粗糙点云
         coarse_point_cloud = torch.cat([coarse_point_cloud, inp_sparse], dim=1).contiguous()
         # rebuild_points：[1, 16384（2048+14336）, 3]，原始点云与细化后重构的全部点云级联作为完整点云输出
-        #rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous() # 原始点云又引入一次
+        rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous() # 原始点云又引入一次
 
-        #----------****实验12****---------- 添加联合损失函数       
+        #----------****实验13_5****---------- 添加联合损失函数       
         # ret = (coarse_point_cloud, fine_2048, rebuild_points) # ([1, 448, 3]，[1, 3, 2048]，[1, 16384, 3])
-        #----------****实验12****----------
+        #----------****实验13_5****----------
         ret = (coarse_point_cloud, rebuild_points) # ([1, 448, 3]，[1, 16384, 3]) 
         return ret
 
