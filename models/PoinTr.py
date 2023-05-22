@@ -121,11 +121,11 @@ class PoinTr(nn.Module):
 
     def get_loss(self, ret, gt):
         loss_coarse = self.loss_func(ret[0], gt)
-        #----------****实验12****----------
-        # fine_2048 = self.loss_func(ret[1], gt)
-        #----------****实验12****----------
-        loss_fine = self.loss_func(ret[1], gt)
-        return loss_coarse, loss_fine
+        #----------****实验13_5****----------
+        loss_fine_4096 = self.loss_func(ret[1], gt)
+        #----------****实验13_5****----------
+        loss_fine = self.loss_func(ret[2], gt)
+        return loss_coarse, loss_fine_4096, loss_fine
 
     def forward(self, xyz):
         # 经过PCTransformer模块计算得到粗糙点云coarse_point_cloud（bs, 224, 3）和 decorder 输出的包含全局和局部特征的注意力predicted proxies: q（bs, 224, 384）
@@ -162,19 +162,18 @@ class PoinTr(nn.Module):
         relative_xyz = self.foldingnet(rebuild_feature).reshape(B, M, 3, -1)    # B M(256) 3 S(16)
         # rebuild_points：[1, 1024, 3]，变成绝对位置rebuild_points，又再一次整合了粗糙点云输入，补充特征
         rebuild_points = (relative_xyz + coarse_point_cloud.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 4096, 3]
-        
+        #----------****实验13_5****----------
+        fine_4096 = rebuild_points
+        #----------****实验13_5****----------
+
         # 使用self.pos_embed的一维卷积来替代线性层，取得shape为[B, 4096, 384]的特征
         rebuild_feature = self.pos_embed(rebuild_points.transpose(1,2)).transpose(1,2).reshape(B*4096, -1)
         relative_xyz = self.foldingnet_1(rebuild_feature).reshape(B, 4096, 3, -1)    # B M(4096) 3 S(4)
         # 这里是选择rebuild_points作为输入，而不是coarse_point_cloud，因为这里的rebuild_points是经过第一次折叠后的点云
         # 也可以选择将输入xyz下采样到1024个点，然后输入，但是这样做会丢失一些缺失点云结构信息，效果可能会变差，需要去实验验证
         rebuild_points = (relative_xyz + rebuild_points.unsqueeze(-1)).transpose(2,3).reshape(B, -1, 3)  # B N 3 [bs, 16384, 3]
-        rebuild_points = fps(rebuild_points, 14336)
+        #rebuild_points = fps(rebuild_points, 14336)
 
-
-        #----------****实验12****----------
-        #fine_2048 = rebuild_points
-        #----------****实验12****----------
 
         # NOTE: fc，这里是构建了一个全连接层，将输入的特征维度降低到3，即预测的点的坐标，消融实验中用这一层替换，效果会变差
         # relative_xyz = self.refine(rebuild_feature)  # BM 3S
@@ -187,11 +186,11 @@ class PoinTr(nn.Module):
         # coarse_point_cloud：[1, 448, 3]，和预测中心点在点云数量维度上级联（224+224），有利于计算后续的 SparseLoss，有监督预测的粗糙点云
         coarse_point_cloud = torch.cat([coarse_point_cloud, inp_sparse], dim=1).contiguous()
         # rebuild_points：[1, 16384（2048+14336）, 3]，原始点云与细化后重构的全部点云级联作为完整点云输出
-        rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous() # 原始点云又引入一次
+        #rebuild_points = torch.cat([rebuild_points, xyz],dim=1).contiguous() # 原始点云又引入一次
 
         #----------****实验13_5****---------- 添加联合损失函数       
-        # ret = (coarse_point_cloud, fine_2048, rebuild_points) # ([1, 448, 3]，[1, 3, 2048]，[1, 16384, 3])
+        ret = (coarse_point_cloud, fine_4096, rebuild_points) # ([1, 448, 3]，[1, 4096,3]，[1, 16384, 3])
         #----------****实验13_5****----------
-        ret = (coarse_point_cloud, rebuild_points) # ([1, 448, 3]，[1, 16384, 3]) 
+        #ret = (coarse_point_cloud, rebuild_points) # ([1, 448, 3]，[1, 16384, 3]) 
         return ret
 
