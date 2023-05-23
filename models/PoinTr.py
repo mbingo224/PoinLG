@@ -120,9 +120,11 @@ class PoinTr(nn.Module):
         self.loss_func = ChamferDistanceL1()
 
     def get_loss(self, ret, gt):
-        loss_coarse = self.loss_func(ret[0], gt)
-        #----------****实验13_5****----------
-        loss_fine_4096 = self.loss_func(ret[1], gt)
+        gt_fine = fps(gt, 4096)
+        gt_coarse = fps(gt, self.num_query)
+        loss_coarse = self.loss_func(ret[0], gt_coarse)
+        #----------****实验13_****----------       
+        loss_fine_4096 = self.loss_func(ret[1], gt_fine)
         #----------****实验13_5****----------
         loss_fine = self.loss_func(ret[2], gt)
         return loss_coarse, loss_fine_4096, loss_fine
