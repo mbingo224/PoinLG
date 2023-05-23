@@ -81,7 +81,7 @@ class PoinTr(nn.Module):
 
         # 折叠步骤fold_step=8 由num_pred和num_query计算而来
         self.fold_step = int(pow(self.num_pred//self.num_query, 0.5) + 0.5) # 14336 // 224 = 64, 加 0.5 实现四舍五入，可以用round函数来代替，注意观察这里的depth，理论上Transformer的encorder和decorder均是6层，因此这里解码层改变为8层是否会对解码有促进作用，待验证
-        self.base_model = PCTransformer(in_chans = 3, embed_dim = self.trans_dim, depth = [6, 8], drop_rate = 0., num_query = self.num_query, knn_layer = self.knn_layer)
+        self.base_model = PCTransformer(in_chans = 3, embed_dim = self.trans_dim, depth = [6, 6], drop_rate = 0., num_query = self.num_query, knn_layer = self.knn_layer)
         
         self.foldingnet = Fold(self.trans_dim, step = self.fold_step, hidden_dim = 256)  # rebuild a cluster point
 
