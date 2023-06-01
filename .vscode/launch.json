@@ -1,0 +1,17 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "subProcess": true,
+            "justMyCode": false, // 理论上这里修改为false，可以跳进第三方库去调试，但是似乎针对第三方库是导入的.so动态链接库不生效
+        }
+    ]
+}
