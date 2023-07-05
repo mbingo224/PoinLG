@@ -1,22 +1,21 @@
-# PoinTr: Diverse Point Cloud Completion with Geometry-Aware Transformers
+# PoinLG: Point Cloud Completion Method Based on Geometric Detail-Aware Transformer
 
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/pointr-diverse-point-cloud-completion-with/point-cloud-completion-on-shapenet)](https://paperswithcode.com/sota/point-cloud-completion-on-shapenet?p=pointr-diverse-point-cloud-completion-with)
+[点云补全在ShapeNet数据集上性能排行榜](https://paperswithcode.com/sota/point-cloud-completion-on-shapenet?p=pointr-diverse-point-cloud-completion-with)
 
-Created by [Xumin Yu](https://yuxumin.github.io/)\*, [Yongming Rao](https://raoyongming.github.io/)\*, [Ziyi Wang](https://github.com/LavenderLA), [Zuyan Liu](https://github.com/lzy-19), [Jiwen Lu](https://scholar.google.com/citations?user=TN8uDQoAAAAJ&hl=en&authuser=1), [Jie Zhou](https://scholar.google.com/citations?user=6a79aPwAAAAJ&hl=en&authuser=1)
+构建者： [Jin Zhang](https://github.com/mbingo224)
 
-[[arXiv]](https://arxiv.org/abs/2108.08839) [[Video]](https://youtu.be/mSGphas0p8g) [[Dataset]](./DATASET.md) [[Models]](#pretrained-models) [[supp]](https://yuxumin.github.io/files/PoinTr_supp.pdf)
 
-This repository contains PyTorch implementation for __PoinTr: Diverse Point Cloud Completion with Geometry-Aware Transformers__ (ICCV 2021 Oral Presentation).
+这个仓库是由Pytorch实现的.
 
-PoinTr is a transformer-based model for point cloud completion.  By representing the point cloud as a set of unordered groups of points with position embeddings, we convert the point cloud to a sequence of point proxies and employ a transformer encoder-decoder architecture for generation. We also propose two more challenging benchmarks [ShapeNet-55/34](./DATASET.md) with more diverse incomplete point clouds that can better reflect the real-world scenarios to promote future research.
+PointLG 设计了有效提取局部几何特征的局部特征超感知器(Local Feature SuperPerceptron,LFSP)以及充分挖掘点云的全局形状特征的全局注意力增强器(GlobalAttention Enhancer,GAE)。PointLG 领先了许多先进的方法，在 PCN 上取得了7.51 的倒角距离(Chamfer Distance,CD)，在现实世界 KITTI上取得了 0.414 的最小匹配距离(Minimal Matching Distance, MMD)。可视化定性实验也证明了PointLG 可获得噪声更小、高度细致的几何形状的完整点云。
 
-![intro](fig/pointr.gif)
+![intro](fig/PointLG-network.png)
 
-## 🔥News
+## 🔥进展
 - **2021-10-07** Our solution based on PoinTr wins the ***Championship*** on [MVP Completion Challenge (ICCV Workshop 2021)](https://mvp-dataset.github.io/MVP/Completion.html). The code will come soon.
 - **2021-09-09** Fix a bug in `datasets/PCNDataset.py`[(#27)](https://github.com/hzxie/GRNet/pull/27), and update the performance of PoinTr on PCN benchmark (CD from 8.38 to ***7.26***).
 
-## Pretrained Models
+## 预训练模型
 
 We provide pretrained PoinTr models:
 | dataset  | url| performance |
